@@ -287,6 +287,7 @@ nav{background:color-mix(in srgb,var(--card) 88%,transparent);-webkit-backdrop-f
 nav button svg{padding:3px 0;width:44px;height:28px;border-radius:14px;transition:background .15s}
 nav button.on svg{background:var(--green-soft)}
 .badge{left:calc(50% + 8px)}
+.featb.sm{padding:9px 12px}.featb.sm b{font-size:14px}.featb.sm small{font-size:12.5px}
 </style>
 </head>
 <body>
@@ -683,6 +684,7 @@ const ME_LS = 'larder-me';
 function getMe(){ try { const m = JSON.parse(localStorage.getItem(ME_LS)||'{}'); return {name:'', town:'', ...m, feat:{plan:true, diary:true, spices:true, ...(m.feat||{})}}; } catch(e){ return {name:'', town:'', feat:{plan:true, diary:true, spices:true}}; } }
 function setMe(m){ try { localStorage.setItem(ME_LS, JSON.stringify(m)); } catch(e){} }
 const feat = k => getMe().feat[k] !== false;
+const aiOpt = k => getMe()[k] !== false;   // strict: only what's in the kitchen · book: keep ideas in the cookbook
 ICONS.today = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg>';
 const ICON_GEAR = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>';
 
@@ -839,6 +841,7 @@ function vRecipes(){
     else h += `<div class="card ai"><h3>✨ Fresh ideas</h3><p>Recipes built around what you have, using up what's closest to expiring.</p>
     <div class="chips" style="margin-bottom:10px">${MEALS.map(m=>`<button class="chip ${meal===m?'on':''}" data-act="meal" data-v="${m}">${m}</button>`).join('')}</div>
     <div class="serves" style="margin:0 0 10px"><span>Cooking for</span><button class="btn sm" data-act="ppl" data-v="-1" aria-label="Fewer">−</button><b>${ppl}</b><button class="btn sm" data-act="ppl" data-v="1" aria-label="More">+</button></div>
+    <div class="feats" style="margin-bottom:10px">${[['strict','Only use what I have','No new ingredients to buy'],['book','Keep ideas in my cookbook','Every idea is saved for next time']].map(([k,l,s])=>`<button class="featb sm ${aiOpt(k)?'on':''}" data-act="aiopt" data-v="${k}"><span><b>${l}</b><small>${s}</small></span><i></i></button>`).join('')}</div>
     <div class="inrow"><input type="text" id="aiAsk" placeholder="Optional: e.g. something spicy" value="${esc(ai.ask)}"><button class="btn pri" data-act="ai" ${ai.status==='loading'||!state.items.length?'disabled':''}>${ai.status==='loading'?'<span class="spin"></span>':'Go'}</button></div>
     ${!state.items.length?'<p class="note" style="margin:8px 0 0">Add some food to your kitchen first.</p>':''}
     ${ai.status==='loading'?'<p class="note" id="aiProg" style="margin:8px 0 0">Thinking…</p>':''}
@@ -853,7 +856,8 @@ function vRecipes(){
   const byRank = (a,b)=>rankOf(b)-rankOf(a);
   const favs = allRecipes().filter(r=>isFav(r.id) && ok(r) && goalOk(r, kind)).map(r=>evalRecipe(r)).sort(byRank);
   if (favs.length) h += `<div class="catlabel">Your favourites</div>` + favs.map(recipeCard).join('');
-  const book = state.saved.filter(r=>!isFav(r.id) && ok(r) && goalOk(r, kind)).map(r=>evalRecipe(r)).sort(byRank);
+  const fresh = new Set(aiAvailable() ? ai.recipes.map(r=>r.id) : []);
+  const book = state.saved.filter(r=>!isFav(r.id) && !fresh.has(r.id) && ok(r) && goalOk(r, kind)).map(r=>evalRecipe(r)).sort(byRank);
   if (book.length) h += `<div class="catlabel">My cookbook (${book.length})</div>` + book.map(recipeCard).join('');
   const evals = RECIPES.filter(r=>!isFav(r.id) && ok(r) && goalOk(r,goals)).map(r=>evalRecipe(r)).sort(byRank);
   if (!state.items.length) h += `<p class="note" style="margin:14px 4px">Add food to your kitchen and recipes will rank themselves by what you have.</p>`;
@@ -1437,8 +1441,8 @@ async function runAI(){
   const meal = ui.meal || defaultMeal(), ppl = ui.people || p.people || 2;
   const favs = allRecipes().filter(r=>isFav(r.id)).map(r=>r.n).slice(0,8);
   const recent = [...new Set(state.log.filter(x=>x.t==='cooked' && x.d >= addDays(-5)).map(x=>x.n))].slice(0,8);
-  const nope = (p.nope||[]).slice(-10);
-  const prompt = `You are a practical home-cooking assistant in the UK. Suggest 3 different ${meal.toLowerCase()} recipes that use mainly what is in this kitchen, prioritising items with the fewest days left.
+  const nope = (p.nope||[]).slice(-10), strict = aiOpt('strict');
+  const prompt = `You are a practical home-cooking assistant in the UK. Suggest 3 different ${meal.toLowerCase()} recipes ${strict ? 'made ONLY from what is in this kitchen' : 'that use mainly what is in this kitchen'}, prioritising items with the fewest days left.
 
 KITCHEN (amount, days left):
 ${food}
@@ -1455,7 +1459,7 @@ COOKED IN THE LAST FEW DAYS: ${recent.join('; ')||'nothing'} (don't repeat these
 REQUEST: ${ai.ask||'none'}
 
 Portions: "servings" must be ${ppl}. Use realistic UK portions per person — for example 2 sausages or hot dogs, 150-200g meat or fish, 75g dry rice or pasta, half a pepper, 2 eggs at breakfast — and scale every amount to ${ppl} serving${ppl>1?'s':''}.${meal==='Snack'?' A snack is one small, quick bite, not a meal.':''} Each ingredient label starts with the amount for all servings, e.g. "300g chicken breast", "1 pepper", "1 tin chopped tomatoes". Only use as much of each ingredient as the dish needs: leaving some for another meal is better than using a whole pack or every vegetable just because it is there, and never use more than the kitchen has. "protein" and "kcal" are per serving and must match these amounts.
-Only use the appliances listed.${sp.length?` Where it suits the dish, write the method for the ${sp.map(applName).join(' or ').toLowerCase()}, with temperature and time.`:''} Assume salt, pepper, oil and water are available. Keep missing ingredients to a minimum. Use metric and UK names. Keep it brief: 4-6 short steps per recipe, no extra commentary.
+Only use the appliances listed.${sp.length?` Where it suits the dish, write the method for the ${sp.map(applName).join(' or ').toLowerCase()}, with temperature and time.`:''} Assume salt, pepper, oil and water are available. ${strict ? 'STRICT RULE: every ingredient must be something in the KITCHEN list or the SPICES list above. Do not add anything else, not even as optional, a garnish or a serving suggestion. If the kitchen is limited, make simpler dishes rather than adding ingredients. The "key" of each ingredient must be the kitchen item it uses.' : 'Keep missing ingredients to a minimum.'} Use metric and UK names. Keep it brief: 4-6 short steps per recipe, no extra commentary.
 Reply with ONLY JSON, no prose:
 {"recipes":[{"name":"","servings":${ppl},"time":30,"protein":35,"kcal":550,"tags":[],"equipment":["hob"],"why":"one short line on what it uses up","ingredients":[{"label":"300g chicken breast","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}]}
 ${JSON_RULES}`;
@@ -1464,7 +1468,14 @@ ${JSON_RULES}`;
 
 
     ai.recipes = (j.recipes||[]).slice(0,4).map(o=>{ const r = toRecipe(o,'ai'); r.meal = meal; if (!r.serves) r.serves = ppl; return r; });
-    ai.status = 'done'; if(!ai.recipes.length) ai.err='No ideas came back — try again.';
+    const got = ai.recipes.length;
+    if (strict){ ai.recipes.forEach(r=>{ r.i = r.i.filter(x=>!(x[2] && !matchIng(x[1], {}) && !rackFor(x[1]))); });   // drop optional extras you don't have
+      ai.recipes = ai.recipes.filter(r=>!evalRecipe(r).missing.length); }
+    ai.status = 'done';
+    if (!ai.recipes.length) ai.err = got ? 'Couldn’t make a full recipe from only what you have. Add more food, or turn off “Only use what I have”.' : 'No ideas came back — try again.';
+    if (aiOpt('book') && ai.recipes.length){ const have = new Set(state.saved.map(r=>normName(r.n))); let n = 0;
+      ai.recipes.forEach(r=>{ if (!have.has(normName(r.n))){ state.saved.unshift(r); have.add(normName(r.n)); n++; } });
+      if (n){ save(); toast(`${n} new recipe${n>1?'s':''} saved to your cookbook`); } }
   } catch(e){
     ai.status='idle';
     if (e && e.code==='not_granted' && !hasGemini()){ sampleFn=null; }
@@ -2499,6 +2510,7 @@ document.addEventListener('click', ev=>{
   if (a==='kview'){ ui.kview = b.dataset.v; render(); return; }
   if (a==='nextidea'){ ui.pickI = (ui.pickI||0) + 1; render(); return; }
   if (a==='aiopen'){ ui.aiOpen = true; render(); return; }
+  if (a==='aiopt'){ const m = getMe(), k = b.dataset.v; m[k] = m[k] === false; setMe(m); const inp = $('#aiAsk'); if (inp) ai.ask = inp.value; render(); return; }
   if (a==='settings-ai') return sheetSettings('ai');
   if (a==='import') return sheetImport();
   if (a==='scan') return openScan();
