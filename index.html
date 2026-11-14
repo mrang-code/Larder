@@ -288,6 +288,7 @@ nav button svg{padding:3px 0;width:44px;height:28px;border-radius:14px;transitio
 nav button.on svg{background:var(--green-soft)}
 .badge{left:calc(50% + 8px)}
 .featb.sm{padding:9px 12px}.featb.sm b{font-size:14px}.featb.sm small{font-size:12.5px}
+.pflag{padding:14px;margin-bottom:12px;background:var(--amber-soft);border-color:transparent}.pflag .rsub{margin-top:4px;white-space:normal}
 </style>
 </head>
 <body>
@@ -764,6 +765,7 @@ function vToday(){
   return h;
 }
 function kseg(){ if (!feat('spices')) return ''; const sp = ui.kview==='spices'; return `<div class="seg wide"><button class="${sp?'':'on'}" data-act="kview" data-v="food">Food${state.items.length?` · ${state.items.length}`:''}</button><button class="${sp?'on':''}" data-act="kview" data-v="spices">Spices${state.spices.length?` · ${state.spices.length}`:''}</button></div>`; }
+function dropBroken(){ const bad = r => r.ai && (!(r.i||[]).length || !(r.st||[]).length); const n = state.saved.length; state.saved = state.saved.filter(r=>!bad(r)); ai.recipes = ai.recipes.filter(r=>!bad(r)); return n !== state.saved.length; }
 function renderNav(){
   const open = state.list.filter(x=>!x.done).length;
   const t = [['today','Today'],['kitchen','Kitchen'],['recipes','Recipes']].concat(feat('plan') ? [['plan','Plan']] : [], [['list','List']]);
@@ -1430,6 +1432,13 @@ function sheetImport(){
 }
 
 /* ---------- AI recipe ideas ---------- */
+const BRK_RE = /yogh?urt bowl|porridge|granola|overnight oat|\bon toast\b|and toast\b|pancake|smoothie|cereal|scramble|omelette|breakfast|bagel/i;
+function goodRecipe(r, meal){
+  if ((r.i||[]).filter(x=>!x[2]).length < 2 || !(r.st||[]).length) return false;          // half-written reply
+  if ((meal==='Dinner' || meal==='Lunch') && BRK_RE.test(r.n) && !/omelette|scramble/i.test(meal==='Lunch' ? r.n : '')) return false;   // breakfast dishes aren't dinner
+  return true;
+}
+const mealRule = meal => meal==='Dinner' ? 'Every recipe must be a proper cooked evening meal. Breakfast-style dishes (yogurt bowls, porridge, eggs on toast, scrambles) are not dinner.' : meal==='Lunch' ? 'Every recipe must be a proper lunch, not a breakfast dish or a snack.' : meal==='Breakfast' ? 'Every recipe must be something people in the UK eat for breakfast.' : '';
 async function runAI(){
   if (!aiAvailable() || ai.status==='loading') return;
   const inp = $('#aiAsk'); ai.ask = inp ? inp.value.trim() : ai.ask;
@@ -1460,19 +1469,25 @@ REQUEST: ${ai.ask||'none'}
 
 Portions: "servings" must be ${ppl}. Use realistic UK portions per person — for example 2 sausages or hot dogs, 150-200g meat or fish, 75g dry rice or pasta, half a pepper, 2 eggs at breakfast — and scale every amount to ${ppl} serving${ppl>1?'s':''}.${meal==='Snack'?' A snack is one small, quick bite, not a meal.':''} Each ingredient label starts with the amount for all servings, e.g. "300g chicken breast", "1 pepper", "1 tin chopped tomatoes". Only use as much of each ingredient as the dish needs: leaving some for another meal is better than using a whole pack or every vegetable just because it is there, and never use more than the kitchen has. "protein" and "kcal" are per serving and must match these amounts.
 Only use the appliances listed.${sp.length?` Where it suits the dish, write the method for the ${sp.map(applName).join(' or ').toLowerCase()}, with temperature and time.`:''} Assume salt, pepper, oil and water are available. ${strict ? 'STRICT RULE: every ingredient must be something in the KITCHEN list or the SPICES list above. Do not add anything else, not even as optional, a garnish or a serving suggestion. If the kitchen is limited, make simpler dishes rather than adding ingredients. The "key" of each ingredient must be the kitchen item it uses.' : 'Keep missing ingredients to a minimum.'} Use metric and UK names. Keep it brief: 4-6 short steps per recipe, no extra commentary.
+${mealRule(meal)}${strict ? ' If the kitchen cannot make 3 such dishes, return fewer recipes rather than a different kind of meal.' : ''} Every recipe needs its full ingredient list and steps. "time" is your honest estimate of total minutes for that dish.
 Reply with ONLY JSON, no prose:
-{"recipes":[{"name":"","servings":${ppl},"time":30,"protein":35,"kcal":550,"tags":[],"equipment":["hob"],"why":"one short line on what it uses up","ingredients":[{"label":"300g chicken breast","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}]}
+{"recipes":[{"name":"","servings":${ppl},"time":25,"protein":35,"kcal":550,"tags":[],"equipment":["hob"],"why":"one short line on what it uses up","ingredients":[{"label":"300g chicken breast","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}]}
 ${JSON_RULES}`;
   try {
-    const j = await askJSON(prompt, {schema:S_IDEAS, onText:(t,th)=>{ const n = (t.match(/"name"/g)||[]).length; const el = $('#aiProg'); if (el) el.textContent = n ? `Writing recipe ${Math.min(3,n)} of 3…` : th ? 'Thinking it through…' : 'Thinking…'; }});
+    let j = await askJSON(prompt, {schema:S_IDEAS, onText:(t,th)=>{ const n = (t.match(/"name"/g)||[]).length; const el = $('#aiProg'); if (el) el.textContent = n ? `Writing recipe ${Math.min(3,n)} of 3…` : th ? 'Thinking it through…' : 'Thinking…'; }});
 
 
-    ai.recipes = (j.recipes||[]).slice(0,4).map(o=>{ const r = toRecipe(o,'ai'); r.meal = meal; if (!r.serves) r.serves = ppl; return r; });
+    const build = j => (j.recipes||[]).slice(0,4).map(o=>{ const r = toRecipe(o,'ai'); r.meal = meal; if (!r.serves) r.serves = ppl; return r; }).filter(r=>goodRecipe(r, meal));
+    ai.recipes = build(j);
+    if (!ai.recipes.length && (j.recipes||[]).length && hasGemini()){   // came back incomplete: one more go on the other model
+      const g = getGem(), alt = (g.model||'gemini-3.5-flash')==='gemini-3.5-flash' ? 'gemini-3.1-flash-lite' : 'gemini-3.5-flash';
+      try { j = parseJSON(await gemini(prompt, false, null, null, S_IDEAS, alt)); ai.recipes = build(j); } catch(e2){}
+    }
     const got = ai.recipes.length;
     if (strict){ ai.recipes.forEach(r=>{ r.i = r.i.filter(x=>!(x[2] && !matchIng(x[1], {}) && !rackFor(x[1]))); });   // drop optional extras you don't have
       ai.recipes = ai.recipes.filter(r=>!evalRecipe(r).missing.length); }
     ai.status = 'done';
-    if (!ai.recipes.length) ai.err = got ? 'Couldn’t make a full recipe from only what you have. Add more food, or turn off “Only use what I have”.' : 'No ideas came back — try again.';
+    if (!ai.recipes.length) ai.err = got ? `Couldn’t make a proper ${meal.toLowerCase()} from only what you have. Add more food, or turn off “Only use what I have”.` : (j.recipes||[]).length ? `The AI didn’t come back with a complete ${meal.toLowerCase()} recipe. Try again.` : 'No ideas came back — try again.';
     if (aiOpt('book') && ai.recipes.length){ const have = new Set(state.saved.map(r=>normName(r.n))); let n = 0;
       ai.recipes.forEach(r=>{ if (!have.has(normName(r.n))){ state.saved.unshift(r); have.add(normName(r.n)); n++; } });
       if (n){ save(); toast(`${n} new recipe${n>1?'s':''} saved to your cookbook`); } }
@@ -2441,7 +2456,7 @@ DIET: ${p.diet}${p.halal?', halal (no pork or alcohol)':''}${p.gf?', gluten-free
 AVOID INGREDIENTS: ${p.dislikes||'nothing'}
 THEY ALREADY HAVE THESE RECIPES (write different dishes): ${have}
 
-STRICT RULE: every ingredient must be something in the KITCHEN list or the SPICES list. Add nothing else, not even as optional or a garnish. Salt, pepper, oil and water are available. Simple dishes are fine. The "key" of each ingredient is the kitchen item it uses. Never use more than is left.
+STRICT RULE: every ingredient must be something in the KITCHEN list or the SPICES list. Add nothing else, not even as optional or a garnish. Salt, pepper, oil and water are available. Simple dishes are fine. The "key" of each ingredient is the kitchen item it uses. Never use more than is left. Each recipe must suit its meal: dinners are proper cooked evening meals, not breakfast dishes. If the kitchen cannot make a proper dish for a meal, leave that list empty. "time" is your honest estimate of total minutes.
 "servings" must be ${ppl}; use realistic UK portions; each ingredient label starts with the amount for all servings. "protein" and "kcal" are per serving. 4-6 short steps each, metric, UK names.
 Reply with ONLY JSON: {"breakfast":[recipe…],"lunch":[recipe…],"dinner":[recipe…]} where each recipe is {"name":"","servings":${ppl},"time":20,"protein":30,"kcal":450,"tags":[],"equipment":["hob"],"why":"","ingredients":[{"label":"2 eggs","key":"egg","optional":false}],"spices":[],"steps":[""]}
 ${JSON_RULES}`;
@@ -2451,7 +2466,7 @@ ${JSON_RULES}`;
   [['breakfast','Breakfast'],['lunch','Lunch'],['dinner','Dinner']].forEach(([k, meal])=>(j[k]||[]).slice(0, 3).forEach(o=>{
     const r = toRecipe(o, 'ai'); r.meal = meal; if (!r.serves) r.serves = ppl;
     r.i = r.i.filter(x=>!(x[2] && !matchIng(x[1], {}) && !rackFor(x[1])));
-    if (!r.i.length || evalRecipe(r).missing.length || names.has(normName(r.n))) return;
+    if (!goodRecipe(r, meal) || evalRecipe(r).missing.length || names.has(normName(r.n))) return;
     names.add(normName(r.n)); state.saved.unshift(r); n++; }));
   return n;
 }
@@ -2479,6 +2494,10 @@ function vPlan(){
   if (any){
     let fromK = 0; info.forEach(v=>{ if (v.left || (!v.buy.length && !(v.short||[]).length)) fromK++; });
     h += `<div class="card plansum"><div class="rmain"><b>${fromK} of ${all.length} meals</b> come from what you have<div class="rsub">${buy.length ? `${buy.length} thing${buy.length>1?'s':''} to buy for the rest` : 'Nothing to buy'}</div></div>${buy.length?'<button class="btn sm pri" data-act="plan-list">Add to list</button>':''}</div>`;
+  }
+  if (any && planOnly()){
+    const hit = []; days.forEach(d=>dayEntries(d).forEach(e=>{ const v = info.get(d+'|'+e.raw); if (v && !e.left && (v.buy.length || (v.short||[]).length)) hit.push({d, e, v}); }));
+    if (hit.length) h += `<div class="card pflag"><b>${hit.length} meal${hit.length>1?'s':''} now need${hit.length>1?'':'s'} something you won’t have</b><div class="rsub">${hit.slice(0,4).map(x=>`${dayLabel(x.d)} ${SLOT[x.e.m].toLowerCase()}: ${esc((x.v.buy[0] ? stripAmt(x.v.buy[0].label) : x.v.short[0].item.name).toLowerCase())}`).join(' · ')}${hit.length>4?' …':''}</div><div class="actions" style="margin-top:10px"><button class="btn sm pri" data-act="plan-fix">Re-plan ${hit.length>1?'those meals':'that meal'}</button></div></div>`;
   }
   days.forEach((d,k)=>{
     const es = dayEntries(d), isT = k===0, rem = dayRemaining(d, T), tk = T.k - rem.k, tp = T.p - rem.p;
@@ -2573,6 +2592,9 @@ document.addEventListener('click', ev=>{
   if (a==='undo') return doUndo();
   if (a==='listview'){ ui.listView = b.dataset.v; return render(); }
   if (a==='autoplan') return runAutoPlan();
+  if (a==='plan-fix'){ const {info} = simulatePlan(); snapUndo();
+    for (let k = 0; k < 7; k++){ const d = addDays(k); dayEntries(d).forEach(e=>{ const v = info.get(d+'|'+e.raw); if (v && !e.left && (v.buy.length || (v.short||[]).length)) planRemove(d, e.raw); }); }
+    save(); return runAutoPlan(); }
   if (a==='planonly'){ const m = getMe(); m.planOnly = m.planOnly === false; setMe(m); render(); return; }
   if (a==='plan-pick') return sheetPlanPick(b.dataset.d, b.dataset.m);
   if (a==='plan-swap') return sheetPlanPick(b.dataset.d, null, b.dataset.e);
@@ -2630,6 +2652,7 @@ document.addEventListener('input', ev=>{ if (ev.target.id==='kSearch'){ ui.q = e
 if (!state.prefs.onboarded && hasData(state)) state.prefs.onboarded = true;
 snapMap = recMap(state);
 if (sweep()) save();
+try { if (dropBroken()) save(); } catch(e){}
 render();
 initRemote(); initSample();
 if ('serviceWorker' in navigator && location.protocol==='https:') { navigator.serviceWorker.register('sw.js').catch(()=>{}); navigator.serviceWorker.addEventListener('message', ev=>{ if (ev.data && ev.data.open==='diary' && !onb) openDiary(); }); }
