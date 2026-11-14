@@ -2360,7 +2360,7 @@ function bestFor(k, m, tk, tp, ctx){
   const ppl = planPeople(), dayIds = new Set(dayEntries(addDays(k)).map(e=>e.id)); let top = null;
   for (const r of ctx.pool){
     if (!slotOk(r, m) || dayIds.has(r.id)) continue;
-    const n = ctx.count.get(r.id) || 0; if (n >= (m==='b' ? 2 : ctx.strict ? 1 : 2)) continue;
+    const n = ctx.count.get(r.id) || 0; if (n >= (m==='b' ? 2 : ctx.cap || (ctx.strict ? 1 : 2))) continue;
     const near = [k-1, k+1].some(j=>j>=0 && j<7 && dayEntries(addDays(j)).some(e=>e.id===r.id && !e.left));
     const mm = macOf(r), kc = mm.k || 450, pr = mm.p || 15;
     for (const pp of (m==='b' ? [1, 1.5] : [0.5, 1, 1.5, 2])){
@@ -2393,7 +2393,9 @@ function diaryFor(m){ const t = iso(today()); return getDiary().entries.filter(e
 function slotDone(m){ return doneToday().has(m) || diaryFor(m).length > 0; }
 function slotSkip(k, m){ return k===0 && (slotDone(m) || slotPassed(m)); }
 function markDone(m, on){ const s = doneToday(); if (on) s.add(m); else s.delete(m); setDone(s); }
+const planOnly = () => getMe().planOnly !== false;   // plan only from what's in the kitchen
 function autoPlan(){
+  const only = planOnly();
   const T = planTargets(), ppl = planPeople(), leftLunch = state.prefs.leftLunch !== false;
   const sim = simulatePlan();
   const ctx = {stock:sim.stock, excl:sim.excl, count:new Map(), pool:allRecipes().filter(r=>!isHidden(r.id) && dietOk(r) && canCook(r)), strict:true};
@@ -2414,15 +2416,64 @@ function autoPlan(){
     return true;
   };
   for (let k = 0; k < 7; k++) for (const m of ['d','l','b']) if (!has(addDays(k), m) && !slotSkip(k, m) && !fill(k, m, true)) later.push([k, m]);
-  later.forEach(([k, m])=>{ if (!has(addDays(k), m) && !slotSkip(k, m)) fill(k, m, false); });
-  return {placed, kitchen};
+  if (only) ctx.cap = 2;   // nothing to buy: allow a repeat rather than a shop
+  later.forEach(([k, m])=>{ if (!has(addDays(k), m) && !slotSkip(k, m)) fill(k, m, only); });
+  const gaps = []; for (let k = 0; k < 7; k++) for (const m of SLOTS) if (!has(addDays(k), m) && !slotSkip(k, m)) gaps.push(m);
+  return {placed, kitchen, gaps};
+}
+// Only-my-kitchen planning: when the recipes run out, ask the AI for new ones made from what's left, keep them in the cookbook, and plan again.
+async function planTopUp(gaps){
+  const sim = simulatePlan(), p = state.prefs, ppl = planPeople();
+  const food = state.items.filter(it=>!it.left && daysLeft(it) >= 0 && !sim.excl.has(it.id)).sort((a,b)=>daysLeft(a)-daysLeft(b)).slice(0, 40)
+    .map(it=>{ const q = sim.stock.has(it.id) ? fmtQty(sim.stock.get(it.id)) : it.qty; return `- ${it.name}${q ? ' (' + q + ' left)' : ''}: ${daysLeft(it)} days left`; }).join('\n');
+  if (!food) return 0;
+  const want = {b:Math.min(2, gaps.filter(m=>m==='b').length), l:Math.min(2, gaps.filter(m=>m==='l').length), d:Math.min(3, gaps.filter(m=>m==='d').length)};
+  const have = allRecipes().map(r=>r.n).slice(0, 80).join('; ');
+  const prompt = `You are a practical home-cooking assistant in the UK. A meal planner has run out of recipes that can be made without shopping. Write new recipes made ONLY from what is left in this kitchen: ${want.b} breakfast, ${want.l} lunch and ${want.d} dinner recipe(s).
+
+KITCHEN LEFT AFTER THIS WEEK'S PLAN (amount, days left):
+${food}
+
+SPICES: ${state.spices.filter(s=>s.level>0).map(s=>s.name).join(', ') || 'none recorded'}
+APPLIANCES: ${applLine()}
+COOKING FOR: ${ppl} ${ppl===1?'person':'people'}
+DIET: ${p.diet}${p.halal?', halal (no pork or alcohol)':''}${p.gf?', gluten-free':''}${p.df?', dairy-free':''}
+AVOID INGREDIENTS: ${p.dislikes||'nothing'}
+THEY ALREADY HAVE THESE RECIPES (write different dishes): ${have}
+
+STRICT RULE: every ingredient must be something in the KITCHEN list or the SPICES list. Add nothing else, not even as optional or a garnish. Salt, pepper, oil and water are available. Simple dishes are fine. The "key" of each ingredient is the kitchen item it uses. Never use more than is left.
+"servings" must be ${ppl}; use realistic UK portions; each ingredient label starts with the amount for all servings. "protein" and "kcal" are per serving. 4-6 short steps each, metric, UK names.
+Reply with ONLY JSON: {"breakfast":[recipe…],"lunch":[recipe…],"dinner":[recipe…]} where each recipe is {"name":"","servings":${ppl},"time":20,"protein":30,"kcal":450,"tags":[],"equipment":["hob"],"why":"","ingredients":[{"label":"2 eggs","key":"egg","optional":false}],"spices":[],"steps":[""]}
+${JSON_RULES}`;
+  const arr = {type:'ARRAY', items:S_RECIPE};
+  const j = await askJSON(prompt, {schema:{type:'OBJECT', properties:{breakfast:arr, lunch:arr, dinner:arr}}});
+  const names = new Set(allRecipes().map(r=>normName(r.n))); let n = 0;
+  [['breakfast','Breakfast'],['lunch','Lunch'],['dinner','Dinner']].forEach(([k, meal])=>(j[k]||[]).slice(0, 3).forEach(o=>{
+    const r = toRecipe(o, 'ai'); r.meal = meal; if (!r.serves) r.serves = ppl;
+    r.i = r.i.filter(x=>!(x[2] && !matchIng(x[1], {}) && !rackFor(x[1])));
+    if (!r.i.length || evalRecipe(r).missing.length || names.has(normName(r.n))) return;
+    names.add(normName(r.n)); state.saved.unshift(r); n++; }));
+  return n;
+}
+async function runAutoPlan(){
+  if (ui.planBusy) return; if (!state.items.length && !planOnly() && !confirmEmptyPlan()) return;
+  let res = autoPlan(), added = 0, aiErr = ''; save(); render();
+  if (planOnly() && res.gaps.length && aiAvailable() && state.items.length){
+    ui.planBusy = true; render(); toast('Writing new recipes from what you have…');
+    try { added = await planTopUp(res.gaps); if (added){ const r2 = autoPlan(); res = {placed:res.placed + r2.placed, kitchen:res.kitchen + r2.kitchen, gaps:r2.gaps}; } } catch(e){ aiErr = e && e.status===-2 ? 'The AI reply was garbled.' : aiErrMsg(e); }
+    ui.planBusy = false; save(); render();
+  }
+  const sk = SLOTS.filter(m=>slotSkip(0, m)).map(m=>SLOT[m].toLowerCase());
+  const base = res.placed ? `Planned ${res.placed} meal${res.placed>1?'s':''}${planOnly() ? ' from your kitchen' : ` · ${res.kitchen} from what you have`}` : (res.gaps.length ? 'Nothing more can be made from your kitchen' : 'Your week is already full');
+  toast(base + (added ? ` · ${added} new recipe${added>1?'s':''} added to your cookbook` : '') + (planOnly() && res.gaps.length && res.placed ? ` · ${res.gaps.length} left empty` : '') + (aiErr ? ` · AI: ${aiErr}` : '') + (sk.length && !planOnly() ? ` · skipped today’s ${sk.length>1 ? sk.slice(0,-1).join(', ')+' and '+sk[sk.length-1] : sk[0]}` : ''));
 }
 function portionText(p){ return p===1 ? '1 serving' : niceNum(p) + ' servings'; }
 function vPlan(){
   const T = planTargets(), {info} = simulatePlan(), days = [...Array(7)].map((_,k)=>addDays(k));
   const all = days.flatMap(d=>dayEntries(d)), any = all.length;
   const buy = any ? planMissing() : [];
-  let h = `<div class="sec"><h2 style="margin-top:4px">This week</h2><button class="btn pri sm" data-act="autoplan">✨ ${any ? 'Fill the gaps' : 'Plan my week'}</button></div>`;
+  let h = `<div class="sec"><h2 style="margin-top:4px">This week</h2><button class="btn pri sm" data-act="autoplan" ${ui.planBusy?'disabled':''}>${ui.planBusy ? '<span class="spin"></span>' : '✨ ' + (any ? 'Fill the gaps' : 'Plan my week')}</button></div>
+    <button class="featb sm ${planOnly()?'on':''}" data-act="planonly" style="width:100%;margin-bottom:12px"><span><b>Only use what I have</b><small>${aiAvailable() ? 'Nothing to buy. AI writes new recipes for any gaps and saves them to your cookbook' : 'Nothing to buy. Meals that need a shop are left out'}</small></span><i></i></button>`;
   h += T.set ? `<p class="note" style="margin:-4px 0 12px">Aiming for about ${T.k.toLocaleString()} kcal and ${T.p}g protein a day${planPeople()>1?` each, cooking for ${planPeople()}`:''}. Meals use what’s in your kitchen first.</p>`
     : `<div class="card hint" style="margin-bottom:12px"><h3>Set your daily targets</h3><p>Add your calorie and protein targets so the plan can hit them. Until then it aims for 2,000 kcal and 100g protein.</p><button class="btn sm pri" data-act="settings">Open Preferences</button></div>`;
   if (any){
@@ -2521,7 +2572,8 @@ document.addEventListener('click', ev=>{
   if (a==='stats') return sheetStats();
   if (a==='undo') return doUndo();
   if (a==='listview'){ ui.listView = b.dataset.v; return render(); }
-  if (a==='autoplan'){ if (!state.items.length && !confirmEmptyPlan()) return; const res = autoPlan(); save(); render(); const sk = SLOTS.filter(m=>slotSkip(0, m)).map(m=>SLOT[m].toLowerCase()); toast(res.placed ? `Planned ${res.placed} meal${res.placed>1?'s':''} · ${res.kitchen} from what you have${sk.length?` · skipped today’s ${sk.length>1 ? sk.slice(0,-1).join(', ')+' and '+sk[sk.length-1] : sk[0]}`:''}` : 'Your week is already full'); return; }
+  if (a==='autoplan') return runAutoPlan();
+  if (a==='planonly'){ const m = getMe(); m.planOnly = m.planOnly === false; setMe(m); render(); return; }
   if (a==='plan-pick') return sheetPlanPick(b.dataset.d, b.dataset.m);
   if (a==='plan-swap') return sheetPlanPick(b.dataset.d, null, b.dataset.e);
   if (a==='plan-open') return openPlanned(b.dataset.d, b.dataset.e);
