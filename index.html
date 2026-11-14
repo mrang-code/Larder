@@ -381,7 +381,8 @@ const aiAvailable = () => hasGemini() || !!sampleFn;
 const isUrl = s => /^https?:\/\/\S+$/i.test(String(s).trim());
 
 function hasData(s){ return s.items.length || s.spices.length || s.list.length; }
-function save(){
+let MACV = 0;
+function save(){ MACV++;
   const ch = stamp();
   state.updated = Date.now();
   try { localStorage.setItem(LS, JSON.stringify(state)); } catch(e){}
@@ -455,6 +456,67 @@ function gramsIn(amt, pg){ const q = parseQty(amt); if (!q) return 0; if (q.d===
 function applyNut(e){ if (!e.nut || e.k==='meal') return e; const g = gramsIn(e.amt, e.pg);
   if (g){ e.kcal = e.nut.k != null ? Math.round(e.nut.k*g/100) : 0; e.p = e.nut.p != null ? Math.round(e.nut.p*g/100) : 0; } else { delete e.kcal; delete e.p; } return e; }
 function nutLine(n){ return [n.k!=null?`${n.k} kcal`:'', n.p!=null?`${n.p}g protein`:'', n.c!=null?`${n.c}g carbs`:'', n.f!=null?`${n.f}g fat`:''].filter(Boolean).join(', '); }
+/* ---------- typical nutrition per 100g: [kcal, protein, carbs, fat, grams per piece] ---------- */
+const NUTDB = {
+ 'chicken breast':[106,24,0,1.1,170],'chicken thigh':[177,18,0,11,90],'cooked chicken':[165,31,0,3.6],'chicken':[120,23,0,2.5,170],
+ 'beef mince':[210,19,0,15],'lamb mince':[250,17,0,20],'mince':[210,19,0,15],'steak':[150,22,0,6],'beef':[150,22,0,6],'pork':[200,20,0,13],'bacon':[270,15,0,23,25],'sausage':[260,13,6,20,60],'ham':[110,18,1,3.5,30],
+ 'smoked salmon':[180,23,0,10],'salmon':[200,20,0,13,120],'tuna':[110,25,0,1,110],'prawn':[70,15,0,1],'shrimp':[70,15,0,1],'cod':[80,18,0,0.7,120],'fish':[90,18,0,2,120],
+ 'egg':[140,13,0.4,10,58],'tofu':[120,13,1.5,7],'paneer':[300,19,3,24],'halloumi':[320,21,2,25],'feta':[265,14,4,21],'parmesan':[400,35,0,29],'mozzarella':[250,18,2,19],
+ 'cottage cheese':[100,11,3.5,4.5],'cream cheese':[250,6,4,23],'cheddar':[410,25,0.1,34],'cheese':[400,24,1,33],
+ 'milk':[47,3.5,4.8,1.7],'greek yogurt':[93,9,3.5,5],'skyr':[63,11,4,0.2],'yogurt':[80,5,7,3],'yoghurt':[80,5,7,3],'sour cream':[200,2.5,4,19],'double cream':[450,1.7,2,48],'cream':[200,2.6,4,19],'butter':[740,0.6,0.6,82],
+ 'mayonnaise':[680,1,1,75],'mayo':[680,1,1,75],'hummus':[300,7,12,25],'houmous':[300,7,12,25],'peanut butter':[600,25,14,49],'honey':[330,0.3,82,0],'olive oil':[880,0,0,98],'oil':[880,0,0,98],
+ 'sourdough':[250,9,48,2,50],'bread':[240,9,45,2,40],'toast':[240,9,45,2,40],'bagel':[260,10,50,1.5,85],'tortilla':[300,8,50,7,62],'wrap':[300,8,50,7,62],'flatbread':[290,8,50,6,70],'pitta':[255,9,50,1.5,60],'pita':[255,9,50,1.5,60],'naan':[290,8,48,7,120],
+ 'spaghetti':[355,12,72,1.5],'linguine':[355,12,72,1.5],'penne':[355,12,72,1.5],'fusilli':[355,12,72,1.5],'pasta':[355,12,72,1.5],'cooked rice':[130,2.7,28,0.3],'rice':[350,7,78,1],'noodle':[350,12,70,2],
+ 'granola':[450,10,60,18],'oat':[375,11,60,8],'sweet potato':[86,1.6,20,0.1,250],'potato':[77,2,17,0.1,250],
+ 'red lentil':[330,24,48,1.5],'lentil':[330,24,48,1.5],'chickpea':[120,7,16,2.5],'baked bean':[80,4.7,13,0.3],'kidney bean':[100,7,14,0.5],'black bean':[100,7,14,0.5],'bean':[100,7,14,0.5],'edamame':[120,12,9,5],
+ 'coconut milk':[170,1.5,3,17],'coconut cream':[200,2,3,20],'stock':[5,0.5,0.5,0.2],'passata':[30,1.3,5,0.2],'chopped tomato':[22,1.1,3.5,0.1],'tinned tomato':[22,1.1,3.5,0.1],'canned tomato':[22,1.1,3.5,0.1],'tomato':[18,0.9,3,0.2,85],
+ 'red onion':[40,1.1,9,0.1,150],'spring onion':[32,1.8,7,0.2,15],'onion':[40,1.1,9,0.1,150],'garlic':[150,6,33,0.5,5],'pepper':[30,1,6,0.3,160],'carrot':[41,0.9,9,0.2,80],'broccoli':[34,2.8,7,0.4,350],'cauliflower':[25,2,5,0.3,500],
+ 'spinach':[23,2.9,3.6,0.4],'kale':[49,4.3,9,0.9],'mushroom':[22,3,3,0.3,20],'courgette':[17,1.2,3,0.3,250],'aubergine':[25,1,6,0.2,300],'cucumber':[15,0.7,3.6,0.1,300],'lettuce':[15,1.4,3,0.2,300],'rocket':[25,2.6,3.7,0.7],'salad':[20,1.5,3,0.3],
+ 'sweetcorn':[85,3,17,1.5],'corn':[85,3,17,1.5],'peas':[80,5.4,14,0.4],'green bean':[31,1.8,7,0.2],'asparagus':[20,2.2,4,0.1],'pak choi':[13,1.5,2,0.2],'mange tout':[32,3,4,0.2],'sugar snap':[42,3,7,0.2],'beansprout':[30,3,4,0.2],
+ 'leek':[31,1.5,7,0.3,200],'celery':[16,0.7,3,0.2,40],'cabbage':[25,1.3,6,0.1],'squash':[45,1,10,0.1],'stir fry':[30,2,5,0.3],'stir-fry':[30,2,5,0.3],'greens':[30,2.5,5,0.4],'veg':[30,1.5,6,0.3],
+ 'avocado':[160,2,9,15,170],'banana':[90,1.1,23,0.3,120],'berr':[50,0.7,12,0.3],'apple':[52,0.3,14,0.2,150],'lemon':[0,0,0,0,0],'lime':[0,0,0,0,0],'ginger':[0,0,0,0,0],'soy sauce':[60,8,6,0],'sugar':[400,0,100,0],'flour':[340,10,72,1.3],
+};
+const NUT_KEYS = Object.keys(NUTDB).sort((a,b)=>b.length-a.length);
+const TIN = {tuna:110, chickpea:240, bean:240, 'kidney bean':240, 'black bean':240, 'baked bean':415, lentil:240, 'coconut milk':400};
+function genericNut(text){ const t = ' ' + String(text||'').toLowerCase().replace(/[^a-z\- ]/g, ' ') + ' ';
+  for (const k of NUT_KEYS) if (t.includes(' ' + k)) { const v = NUTDB[k]; return {key:k, k:v[0], p:v[1], c:v[2], f:v[3], pc:v[4]||0}; } return null; }
+// Rough grams of an ingredient line like "200g chicken", "2 eggs", "1 tin tuna", "2 tbsp peanut butter".
+function ingGrams(label, gen, it){
+  const s = unfrac(String(label||'').toLowerCase().trim());
+  const sp = s.match(/^(\d+(?:[.,]\d+)?|[½¼¾⅓⅔])\s*(tbsp|tablespoons?|tsp|teaspoons?)\b/);
+  if (sp){ const n = FRAC[sp[1]] != null ? FRAC[sp[1]] : parseFloat(sp[1].replace(',', '.')); return n * (/^t(bsp|ablesp)/.test(sp[2]) ? 15 : 5); }
+  if (/^(a )?handful/.test(s)) return 30;
+  const q = parseQty(label); if (!q) return 0;
+  if (q.d==='g' || q.d==='ml') return q.n;
+  if (/^(tin|can)$/.test(q.w)) return q.n * ((gen && TIN[gen.key]) || 400);
+  const pg = (it && pieceG(it)) || (gen && gen.pc) || 0;
+  return q.n * pg;
+}
+// Calories and protein for one serving. Starts from the recipe's own estimate (which allows for oil etc.)
+// and swaps in the label of anything you're using that has one. Recipes with no estimate are worked out from the ingredients.
+const _mac = new Map();
+function recipeMacros(r){
+  const ck = r.id + '|' + MACV; if (_mac.has(ck)) return _mac.get(ck);
+  const sv = servesOf(r) || 1, baseK = r.k || KCAL[r.id] || 0, baseP = r.p || 0;
+  let gk = 0, gp = 0, dk = 0, dp = 0, gaps = 0; const labs = [];
+  (r.i||[]).forEach(x=>{
+    const it = matchIng(x[1], {}); if (x[2] && !it) return;
+    const gen = genericNut(x[0]) || genericNut(x[1].replace(/\|/g, ' ')), g = ingGrams(x[0], gen, it);
+    if (gen && g){ gk += gen.k*g/100; gp += gen.p*g/100; } else if (!x[2] && !(gen && gen.k===0)) gaps++;
+    const n = it && it.nut;
+    if (n && g){ const lk = n.k != null ? n.k : gen ? gen.k : null, lp = n.p != null ? n.p : gen ? gen.p : null;
+      if (gen){ if (lk != null) dk += (lk - gen.k)*g/100; if (lp != null) dp += (lp - gen.p)*g/100; }
+      else if (!baseK){ gk += (lk||0)*g/100; gp += (lp||0)*g/100; }
+      labs.push({n:it.lab || it.name, nut:n, g:Math.round(g)}); }
+  });
+  let k, p; const oil = /\b(oil|fry|fried|roast|saut|brown|sear)/i.test((r.st||[]).join(' ')) ? 62 : 0;   // ~7g oil a serving
+  if (!gaps && gk){ k = gk/sv + oil + dk/sv; p = gp/sv + dp/sv; }           // every ingredient known: add it up
+  else if (baseK){ k = baseK + dk/sv; p = baseP + dp/sv; }                  // otherwise the recipe's own estimate, with labels swapped in
+  else { k = gk ? gk/sv + oil : 0; p = gp/sv; }
+  const res = {k:Math.max(0, Math.round(k)), p:Math.max(0, Math.round(p)), labs, est:!baseK && gaps > 0};
+  if (_mac.size > 400) _mac.clear(); _mac.set(ck, res); return res;
+}
+const macOf = r => recipeMacros(r);
 function itemNutFields(it){ return {...(it.nut ? {nut:it.nut} : {}), ...(it.lab ? {lab:it.lab} : {}), ...(pieceG(it) ? {pg:pieceG(it)} : {})}; }
 const sNut = () => ({type:'OBJECT', properties:{product:S_STR, kcal:{type:'NUMBER'}, protein:{type:'NUMBER'}, carbs:{type:'NUMBER'}, fat:{type:'NUMBER'}, serving_g:{type:'NUMBER'}, error:S_STR}, propertyOrdering:['error','product','kcal','protein','carbs','fat','serving_g']});
 async function readLabel(image){
@@ -549,7 +611,7 @@ function dietOk(r){
 function goalOk(r, goals){
   const t=tagsOf(r);
   for (const g of goals){
-    if (g==='hp' && !(r.p>=25)) return false;
+    if (g==='hp' && !(macOf(r).p>=25)) return false;
     if (g==='quick' && !(r.t<=30)) return false;
     if (g==='lowcarb' && !t.has('lowcarb')) return false;
     if (g==='budget' && !t.has('budget')) return false;
@@ -851,7 +913,7 @@ function sheetRecipe(id, keepScroll){
   const alts = myAlts(r), mine = state.prefs.appliances;
   const lack = canCook(r) ? [] : eqOf(r).filter(x=>!mine.includes(x));
   const pg = state.prefs.proteinGoal, kg = state.prefs.kcalGoal, mac = macroLine(r);
-  const goalNote = (pg && r.p) || (kg && kcalOf(r)) ? ` — ${[pg && r.p ? Math.round(r.p/pg*100)+'% of your daily protein' : '', kg && kcalOf(r) ? Math.round(kcalOf(r)/kg*100)+'% of your calories' : ''].filter(Boolean).join(', ')}` : '';
+  const MM = macOf(r); const goalNote = (pg && MM.p) || (kg && MM.k) ? ` — ${[pg && MM.p ? Math.round(MM.p/pg*100)+'% of your daily protein' : '', kg && MM.k ? Math.round(MM.k/kg*100)+'% of your calories' : ''].filter(Boolean).join(', ')}` : '';
   openSheet(`${head(esc(r.n))}
     <div class="meta" style="margin-top:-4px">${r.t} min${mac?' · '+mac+' per serving':''}${goalNote}</div>
     ${r.why?`<p class="note">${esc(r.why)}</p>`:''}${r.source?`<p class="note"><a href="${esc(r.source)}" target="_blank" rel="noopener" style="color:var(--green)">Original recipe ↗</a></p>`:''}
@@ -863,7 +925,7 @@ function sheetRecipe(id, keepScroll){
       const sub = x.item ? `${esc(x.item.name)}${x.item.qty?' · '+esc(x.item.qty):''} · ${dueShort(daysLeft(x.item)).toLowerCase()}${x.item.loc==='freezer'?' · in the freezer, defrost first':''}` : x.rack ? `${esc(x.rack.name)} · in your spice rack` : '';
       return `<div class="ing"><span class="s ${x.short?'w':ok?'y':'n'}">${x.short?'!':ok?'✓':'–'}</span><span class="t">${esc(scaleLabel(x.label, f))}${x.opt?' <small>(optional)</small>':''}${sub?`<br><small>${sub}${x.short?` — <b style="color:var(--amber)">not quite enough</b>`:''}</small>`:''}</span>${!ok||x.short?`<button class="btn sm" data-addone="${esc(x.short ? x.item.name : x.label)}">+ List</button>`:''}</div>`; }).join('')}</div>
     ${e.sp.length?`<h3 style="margin:16px 0 4px">Spices</h3><div>${e.sp.map(x=>`<div class="ing"><span class="s ${x.sp?'y':'n'}">${x.sp?'✓':'–'}</span><span class="t">${esc(cap(x.keys.split('|')[0]))}${x.sp?` <small>· ${lvlLabel(x.sp.level).toLowerCase()}</small>`:''}</span>${!x.sp?`<button class="btn sm" data-addone="${esc(cap(x.keys.split('|')[0]))}">+ List</button>`:''}</div>`).join('')}</div>`:''}
-    <p class="note">Salt, pepper, oil and water assumed.</p>
+    <p class="note">Salt, pepper, oil and water assumed.${(()=>{ const m = macOf(r); return m.labs.length ? ` Calories and protein use the label of your ${m.labs.map(l=>esc(l.n)).join(', ')}.` : ''; })()}</p>
     <h3 style="margin:16px 0 4px">Method</h3><ol class="steps">${(r.st||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol>
     ${alts.map(a=>`<div class="altn"><b>${applName(a[0])}:</b> ${esc(a[1])}</div>`).join('')}
     <div class="actions">${(r.st||[]).length?'<button class="btn pri" id="rStart">Start cooking</button>':''}</div>
@@ -887,6 +949,7 @@ function sheetRecipe(id, keepScroll){
 const portionsTxt = n => n > 0 ? fmtQty({n, d:'n', w:'portion'}) : 'none';
 function confirmEmptyPlan(){ toast('Planning with an empty kitchen — everything will go on the shopping list'); return true; }
 function sheetCook(r, e){
+  const mac = macOf(r);
   const cooked = (ui.serves && ui.serves[r.id]) || servesOf(r);
   let eaten = Math.min((ui.eat && ui.eat[r.id]) || 1, cooked);
   const used = [], seen = new Map();
@@ -919,9 +982,9 @@ function sheetCook(r, e){
           else { const v = el.querySelector(`[data-left="${it.id}"]`).value.trim(); if (v !== (it.qty||'')) it.qty = v; } });
         sps.forEach(s=>{ s.level = Math.max(0, s.level-5); });
         logEv('cooked', {name:r.n, cat:'Recipe', rid:r.id});
-        if (eaten > 0) diaryMeal(r, eaten);
+        if (eaten > 0) diaryMeal(r, eaten, null, mac);
         if (el.querySelector('#cLeft').checked){ const lp = leftN();
-          state.items.push({id:uid(), name:'Leftover '+r.n.charAt(0).toLowerCase()+r.n.slice(1), qty: lp>=1 ? fmtNum(lp)+' portion'+(lp>1?'s':'') : '', cat:'Leftovers', loc:'fridge', exp:addDays(3), added:iso(today()), listed:false, left:true, rid:r.id}); }
+          state.items.push({id:uid(), name:'Leftover '+r.n.charAt(0).toLowerCase()+r.n.slice(1), qty: lp>=1 ? fmtNum(lp)+' portion'+(lp>1?'s':'') : '', cat:'Leftovers', loc:'fridge', exp:addDays(3), added:iso(today()), listed:false, left:true, rid:r.id, mac:{k:mac.k, p:mac.p, labs:mac.labs}}); }
         const t = iso(today()); if (state.plan[t]){ state.plan[t] = state.plan[t].filter(x=>{ const pe0 = pe(x); return !(pe0.id===r.id && !pe0.left); }); if (!state.plan[t].length) delete state.plan[t]; }
         if (ui.doneAfter){ markDone(ui.doneAfter, true); ui.doneAfter = null; }
         sweep(); save(); closeSheet(); render(); toastUndo(eaten > 0 ? 'Kitchen updated · added to your food diary' : 'Kitchen updated');
@@ -1531,7 +1594,7 @@ const KCAL = {r1:550,r2:600,r3:520,r4:560,r5:580,r6:330,r7:380,r8:560,r9:650,r10
 const kcalOf = r => r.k || KCAL[r.id] || 0;
 const servesOf = r => r.serves || 2;
 const scaleOf = r => ((ui.serves && ui.serves[r.id]) || servesOf(r)) / servesOf(r);
-function macroLine(r){ return `${r.p?`~${r.p}g protein`:''}${r.p&&kcalOf(r)?' · ':''}${kcalOf(r)?`~${kcalOf(r)} kcal`:''}`; }
+function macroLine(r){ const m = macOf(r); return `${m.p?`~${m.p}g protein`:''}${m.p&&m.k?' · ':''}${m.k?`~${m.k} kcal`:''}`; }
 
 /* ---------- undo and history ---------- */
 let undoSnap = null, undoDiary = null;
@@ -1557,7 +1620,7 @@ function itemGone(id, how, toList){
   logEv(how, it);
   if (how==='used'){
     if (it.left){ const r = it.rid && recipeById(it.rid), q = parseQty(it.qty), n = q && q.d==='n' ? q.n : 1;
-      if (r) diaryMeal(r, n, it.name); else diaryAdd({k:'meal', n:it.name, sv:n, ate:true, ings:[]}); }
+      if (r) diaryMeal(r, n, it.name, it.mac); else diaryAdd({k:'meal', n:it.name, sv:n, ate:true, ings:[]}); }
     else diaryAdd({k:'used', n:it.name, amt:it.qty||'', ate:false, ...itemNutFields(it)});
   }
   const listed = toList && !it.left && !it.listed && addToList(it.name, how==='bin' ? 'Binned' : 'Used up');
@@ -1955,20 +2018,21 @@ const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart
 function mealFor(t){ const h = +String(t).slice(0,2); return h < 11 ? 'Breakfast' : h < 15 ? 'Lunch' : h < 17 ? 'Snack' : 'Dinner'; }
 function diaryAdd(e){ const d = getDiary(), t = nowHM(); const en = applyNut({id:uid(), d:iso(today()), t, m:ui.doneAfter ? SLOT[ui.doneAfter] : mealFor(t), ...e}); d.entries.push(en); setDiary(d); return en; }
 // A portion of a recipe: its ingredients scaled to what you ate.
-function portionOf(r, servings){ const f = servings / servesOf(r); return {ings:r.i.map(x=>scaleLabel(x[0], f)), kcal:Math.round(kcalOf(r)*servings), p:Math.round((r.p||0)*servings)}; }
-function diaryMeal(r, servings, name){
-  const pr = portionOf(r, servings);
-  return diaryAdd({k:'meal', n:name||r.n, rid:r.id, sv:servings, of:servesOf(r), ate:true, ings:pr.ings, kcal:pr.kcal, p:pr.p});
+function portionOf(r, servings, mac){ const f = servings / servesOf(r), m = mac || macOf(r); return {ings:r.i.map(x=>scaleLabel(x[0], f)), kcal:Math.round(m.k*servings), p:Math.round(m.p*servings), m}; }
+function diaryMeal(r, servings, name, mac){
+  const pr = portionOf(r, servings, mac), m = pr.m;
+  return diaryAdd({k:'meal', n:name||r.n, rid:r.id, sv:servings, of:servesOf(r), ate:true, ings:pr.ings, kcal:pr.kcal, p:pr.p, mps:{k:m.k, p:m.p}, ...(m.labs && m.labs.length ? {labs:m.labs.map(l=>({n:l.n, nut:l.nut}))} : {})});
 }
 function rescaleMeal(e, sv){
   e.sv = Math.max(0.5, sv); const r = e.rid && recipeById(e.rid);
-  if (r){ const pr = portionOf(r, e.sv); e.ings = pr.ings; e.kcal = pr.kcal; e.p = pr.p; }
+  if (r){ const pr = portionOf(r, e.sv, e.mps); e.ings = pr.ings; e.kcal = pr.kcal; e.p = pr.p; }
 }
 function entryText(e){
   if (e.k==='meal'){
     const s = e.sv===1 ? '1 serving' : fmtNum(e.sv) + ' servings';
     const of = e.of ? ` (the recipe serves ${e.of})` : '';
-    return `${e.n}, home-made, ${s}${of}. My portion: ${(e.ings||[]).join(', ')}.`;
+    const lb = (e.labs||[]).length ? ` Made with ${e.labs.map(l=>`${l.n} (label per 100g: ${nutLine(l.nut)})`).join('; ')}.` : '';
+    return `${e.n}, home-made, ${s}${of}. My portion: ${(e.ings||[]).join(', ')}.${lb}`;
   }
   const nm = e.lab ? `${e.n} (${e.lab})` : e.n, lb = e.nut ? ` – label per 100g/ml: ${nutLine(e.nut)}` : '';
   return (e.amt ? `${e.amt} ${nm}` : `${nm} (amount not recorded)`) + lb;
@@ -2036,7 +2100,7 @@ function openDiary(day, keepScroll){
 // You used part of something: leftovers count as eaten, anything else waits in the diary for you to confirm.
 function logPartial(it, q){
   if (it.left){ const r = it.rid && recipeById(it.rid), n = q.d==='n' ? q.n : 1;
-    if (r) diaryMeal(r, n, it.name); else diaryAdd({k:'meal', n:it.name, sv:n, ate:true, ings:[]}); }
+    if (r) diaryMeal(r, n, it.name, it.mac); else diaryAdd({k:'meal', n:it.name, sv:n, ate:true, ings:[]}); }
   else diaryAdd({k:'used', n:it.name, amt:fmtQty(q), ate:false, part:true, ...itemNutFields(it)});
 }
 
@@ -2071,7 +2135,7 @@ function pk(m, id, p, left){ return `${m}:${id}${p && p !== 1 ? '*' + fmtNum(p) 
 function dayEntries(d){ return (state.plan[d]||[]).map(pe).sort((a,b)=>SLOTS.indexOf(a.m) - SLOTS.indexOf(b.m)); }
 const planPeople = () => Math.max(1, state.prefs.people || 1);
 function planTargets(){ const p = state.prefs; return {k:p.kcalGoal || 2000, p:p.proteinGoal || 100, set:!!(p.kcalGoal || p.proteinGoal)}; }
-function entryMacros(e){ const r = recipeById(e.id); return r ? {k:Math.round((kcalOf(r)||0)*e.p), p:Math.round((r.p||0)*e.p)} : {k:0, p:0}; }
+function entryMacros(e){ const r = recipeById(e.id); if (!r) return {k:0, p:0}; const m = macOf(r); return {k:Math.round(m.k*e.p), p:Math.round(m.p*e.p)}; }
 function slotOk(r, m){
   if (r.meal==='Snack') return false;
   if (m==='b') return BRK.has(r.id) || r.meal==='Breakfast';
@@ -2129,7 +2193,7 @@ function bestFor(k, m, tk, tp, ctx){
     if (!slotOk(r, m) || dayIds.has(r.id)) continue;
     const n = ctx.count.get(r.id) || 0; if (n >= (m==='b' ? 2 : ctx.strict ? 1 : 2)) continue;
     const near = [k-1, k+1].some(j=>j>=0 && j<7 && dayEntries(addDays(j)).some(e=>e.id===r.id && !e.left));
-    const kc = kcalOf(r) || 450, pr = r.p || 15;
+    const mm = macOf(r), kc = mm.k || 450, pr = mm.p || 15;
     for (const pp of (m==='b' ? [1, 1.5] : [0.5, 1, 1.5, 2])){
       const ev = evalRecipe(r, {day:k, scale:ppl*pp/servesOf(r), stock:ctx.stock, exclude:ctx.excl});
       const full = !ev.missing.length && !ev.short.length; if (ctx.strict && !full) continue;
