@@ -1,8 +1,10 @@
-// Larder reminder server — runs free on Cloudflare Workers.
+// Larder server — runs free on Cloudflare Workers.
 //
-// What it does: once an hour it checks who is due a reminder today and sends their phone an
-// empty "ping". The Larder app on the phone then works out what needs using up and shows the
-// notification. This server only ever stores a push address and a list of dates — no food names.
+// 1. Expiry reminders: once an hour it checks who is due a reminder today and sends their phone an
+//    empty "ping". The Larder app on the phone then works out what needs using up and shows the
+//    notification. For reminders it only stores a push address and a list of dates — no food names.
+// 2. Shared kitchen: keeps one copy of a household's kitchen, list, plan and cookbook, so several
+//    phones stay in sync. Each household is protected by a secret in its invite code.
 //
 // Setup (see the guide): paste this file into a Worker, add a KV binding named DB,
 // and add a Cron Trigger of  0 * * * *  (every hour).
@@ -25,6 +27,66 @@ function okEndpoint(endpoint) {
   try { const u = new URL(endpoint); return u.protocol === 'https:' && PUSH_HOSTS.some(h => u.hostname === h || u.hostname.endsWith('.' + h)); }
   catch (e) { return false; }
 }
+// Combine two copies of a kitchen. Every record carries _u (when it last changed) and deletions are
+// remembered in `del` for 60 days, so edits from different phones merge instead of overwriting.
+function mergeStates(a, b){
+  a = a || {}; b = b || {};
+  const now = Date.now(), del = {};
+  [a.del || {}, b.del || {}].forEach(d => { for (const k in d) if (!(del[k] >= d[k])) del[k] = d[k]; });
+  for (const k in del) if (now - del[k] > 60 * 864e5) delete del[k];
+  const out = {};
+  const COL = {items:'i', spices:'s', list:'l', saved:'r', log:'g'};
+  for (const c in COL){
+    const p = COL[c], m = new Map(), order = [];
+    const add = r => { if (!r || r.id == null) return; const ex = m.get(r.id);
+      if (!ex){ m.set(r.id, r); order.push(r.id); } else if ((r._u || 0) > (ex._u || 0)) m.set(r.id, r); };
+    (Array.isArray(a[c]) ? a[c] : []).forEach(add); (Array.isArray(b[c]) ? b[c] : []).forEach(add);
+    out[c] = order.map(id => m.get(id)).filter(r => !(del[p + ':' + r.id] >= (r._u || 0)));
+  }
+  const pa = a.plan || {}, pb = b.plan || {}, ua = a.planU || {}, ub = b.planU || {};
+  out.plan = {}; out.planU = {};
+  new Set([...Object.keys(pa), ...Object.keys(pb), ...Object.keys(ua), ...Object.keys(ub)]).forEach(d => {
+    const fromA = (ua[d] || 0) >= (ub[d] || 0), v = fromA ? (pa[d] || pb[d]) : (pb[d] || pa[d]), u = Math.max(ua[d] || 0, ub[d] || 0);
+    if (u) out.planU[d] = u;
+    if (Array.isArray(v) && v.length && !(del['p:' + d] >= u)) out.plan[d] = v;
+  });
+  out.prefs = (a.prefsU || 0) >= (b.prefsU || 0) ? (a.prefs || b.prefs) : (b.prefs || a.prefs);
+  out.prefsU = Math.max(a.prefsU || 0, b.prefsU || 0);
+  out.del = del;
+  return out;
+}
+
+const okId = s => /^[a-z0-9]{10}$/.test(String(s || ''));
+function rid(n) { const a = 'abcdefghijkmnpqrstuvwxyz23456789', b = crypto.getRandomValues(new Uint8Array(n)); return [...b].map(x => a[x % a.length]).join(''); }
+async function sha(s) { return b64u(await crypto.subtle.digest('SHA-256', enc(String(s)))); }
+function cleanState(st) {
+  st = st && typeof st === 'object' ? st : {};
+  const o = {};
+  ['items', 'spices', 'list', 'saved', 'log'].forEach(k => { o[k] = Array.isArray(st[k]) ? st[k] : []; });
+  ['plan', 'planU', 'del'].forEach(k => { o[k] = st[k] && typeof st[k] === 'object' && !Array.isArray(st[k]) ? st[k] : {}; });
+  o.prefs = st.prefs && typeof st.prefs === 'object' ? st.prefs : undefined; o.prefsU = +st.prefsU || 0;
+  return o;
+}
+async function household(path, b, env, origin) {
+  if (path === '/hh/new') {
+    const id = rid(10), secret = rid(24), state = cleanState(b.state);
+    await env.DB.put('hh:' + id, JSON.stringify({h: await sha(secret), state, t: Date.now()}));
+    return json({id, secret, state}, 200, origin);
+  }
+  if (path === '/hh/sync') {
+    if (!okId(b.id)) return json({error: 'Bad kitchen id'}, 400, origin);
+    const rec = await env.DB.get('hh:' + b.id, 'json');
+    if (!rec) return json({error: 'No such kitchen'}, 404, origin);
+    if (rec.h !== await sha(b.secret || '')) return json({error: 'Wrong code'}, 403, origin);
+    if (b.state && typeof b.state === 'object') {
+      rec.state = mergeStates(cleanState(b.state), rec.state); rec.t = Date.now();
+      try { await env.DB.put('hh:' + b.id, JSON.stringify(rec)); } catch (e) { return json({error: 'Busy, try again'}, 503, origin); }
+    }
+    return json({state: rec.state}, 200, origin);
+  }
+  return json({error: 'Not found'}, 404, origin);
+}
+
 async function keyFor(endpoint) { return 'sub:' + b64u(await crypto.subtle.digest('SHA-256', enc(endpoint))); }
 
 // The server makes its own signing keys the first time it runs and keeps them in storage.
@@ -82,14 +144,16 @@ export default {
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors(origin)});
     if (req.method === 'GET' && url.pathname === '/') {
-      return new Response('Larder reminder server is running.\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB'), {headers: {'Content-Type': 'text/plain'}});
+      return new Response('Larder server is running (v2).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB'), {headers: {'Content-Type': 'text/plain'}});
     }
     if (!env.DB) return json({error: 'Storage is not connected. Add a KV binding named DB.'}, 500, origin);
     if (req.method === 'GET' && url.pathname === '/key') return json({key: (await vapid(env)).pub}, 200, origin);
     if (req.method !== 'POST') return json({error: 'Not found'}, 404, origin);
     if (!ALLOWED_ORIGINS.includes(origin)) return json({error: 'Not allowed'}, 403, origin);
 
+    if (+(req.headers.get('Content-Length') || 0) > 3e6) return json({error: 'Too large'}, 413, origin);
     let b; try { b = await req.json(); } catch (e) { return json({error: 'Bad request'}, 400, origin); }
+    if (url.pathname.startsWith('/hh/')) return household(url.pathname, b || {}, env, origin);
     const endpoint = String((b && b.sub && b.sub.endpoint) || (b && b.endpoint) || '');
     if (!okEndpoint(endpoint)) return json({error: 'Bad subscription'}, 400, origin);
     const k = await keyFor(endpoint);
