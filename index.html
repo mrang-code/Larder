@@ -600,7 +600,7 @@ function sheetAdd(prefill){
         if (!hasGemini() && (image || !sampleFn)){ st.textContent = 'Add your free Gemini key in Preferences to use this.'; return; }
         st.innerHTML = '<span class="spin"></span>' + (image ? 'Reading the photo…' : 'Sorting your list…');
         try {
-          const j = parseJSON(await askAI(scanPrompt(text), false, image));
+          const j = await askJSON(scanPrompt(text), {image, schema:S_SCAN});
           const toks = (j.items||[]).map(x=>({name:cap(String(x.name||'').trim()), qty:String(x.qty||'').trim()})).filter(x=>x.name);
           if (!toks.length){ st.textContent = image ? 'Couldn’t see any food in that photo. Try a clearer one.' : 'Couldn’t find any food in that text.'; return; }
           sheetPreview(toks, toks.map(t=>t.name+(t.qty?' '+t.qty:'')).join(', '));
@@ -799,7 +799,7 @@ function sheetSettings(focus){
       el.querySelector('#gTest').onclick=async()=>{ const st=el.querySelector('#gStatus'); const key=el.querySelector('#gKey').value.trim();
         setGem({key, model:el.querySelector('#gModel').value}); if(!key){ st.textContent='Key removed.'; return; }
         st.innerHTML='<span class="spin"></span>Testing…';
-        try { await gemini('Reply with this JSON only: {"ok":true}', false); st.textContent='✓ Key works. Recipe import and scanning are ready.'; }
+        try { parseJSON(await gemini('Reply with this JSON only: {"ok":true}', false)); st.textContent='✓ Key works. Recipe import and scanning are ready.'; }
         catch(e){ st.textContent = aiErrMsg(e); } };
       const ns = el.querySelector('#nStatus');
       el.querySelector('#nOn').onclick=async()=>{
@@ -830,62 +830,67 @@ function loadSample(){
 }
 
 /* ---------- AI: Gemini (own key) or Claude ---------- */
-async function gemini(prompt, useUrl, image, onText){
-  const g = getGem(); const models = [g.model||'gemini-3.5-flash', 'gemini-3.1-flash-lite'].filter((v,i,a)=>a.indexOf(v)===i);
+async function gemini(prompt, useUrl, image, onText, schema, onlyModel){
+  const g = getGem(); const models = onlyModel ? [onlyModel] : [g.model||'gemini-3.5-flash', 'gemini-3.1-flash-lite'].filter((v,i,a)=>a.indexOf(v)===i);
   let last = {status:0, message:'No response'};
   for (const m of models){
     const parts = image ? [{inline_data:{mime_type:'image/jpeg', data:image}}, {text:prompt}] : [{text:prompt}];
-    const body = {contents:[{role:'user', parts}], generationConfig:{thinkingConfig:{thinkingLevel:'low'}}};
-    if (useUrl) body.tools = [{url_context:{}}]; else body.generationConfig.responseMimeType = 'application/json';
-    // Stream the answer so the phone sees it arriving; iPhones drop requests that sit silent for 60 seconds.
-    const ctl = new AbortController(); let timer = setTimeout(()=>ctl.abort(), 50000);
-    const bump = () => { clearTimeout(timer); timer = setTimeout(()=>ctl.abort(), 50000); };
-    let r;
-    try {
-      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:streamGenerateContent?alt=sse`, {method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':g.key}, body:JSON.stringify(body), signal:ctl.signal});
-    } catch(e){ clearTimeout(timer); last = {status:0, message: ctl.signal.aborted ? 'timeout' : 'network', model:m}; continue; }
-    if (!r.ok){
-      clearTimeout(timer);
-      const e = await r.json().catch(()=>({})); const er = Array.isArray(e) ? e[0] : e;
-      last = {status:r.status, message:(er && er.error && er.error.message)||r.statusText, model:m};
-      if ([404,429,500,503].includes(r.status)) continue;
-      // An older model that doesn't take the thinking setting: retry once without it.
-      if (r.status===400 && /thinking/i.test(last.message||'')){ delete body.generationConfig.thinkingConfig;
-        try { const r2 = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, {method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':g.key}, body:JSON.stringify(body)});
-          if (r2.ok){ const j = await r2.json(); return ((j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts)||[]).filter(p=>!p.thought).map(p=>p.text||'').join(''); } } catch(e2){} }
-      break;
+    const body = {contents:[{role:'user', parts}], generationConfig:{thinkingConfig:{thinkingLevel:'low'}, maxOutputTokens:8192}};
+    if (useUrl) body.tools = [{url_context:{}}];
+    else { body.generationConfig.responseMimeType = 'application/json'; if (schema) body.generationConfig.responseSchema = schema; }
+    let res = await geminiCall(m, body, onText);
+    // If this model rejects one of the optional settings, try once more without them.
+    if (res.err && res.err.status===400 && !/api key/i.test(res.err.message||'') && (body.generationConfig.thinkingConfig || body.generationConfig.responseSchema)){
+      delete body.generationConfig.thinkingConfig; delete body.generationConfig.responseSchema;
+      res = await geminiCall(m, body, onText);
     }
-    let text = '', buf = '', blocked = '';
-    try {
-      const rd = r.body.getReader(), dec = new TextDecoder();
-      const take = line => {
-        line = line.trim(); if (!line.startsWith('data:')) return;
-        let j; try { j = JSON.parse(line.slice(5)); } catch(e){ return; }
-        if (j.promptFeedback && j.promptFeedback.blockReason) blocked = j.promptFeedback.blockReason;
-        const c = j.candidates && j.candidates[0];
-        ((c && c.content && c.content.parts) || []).forEach(p=>{ if (!p.thought && p.text) text += p.text; });
-      };
-      for (;;){
-        const {value, done} = await rd.read(); if (done) break; bump();
-        buf += dec.decode(value, {stream:true}); const lines = buf.split('\n'); buf = lines.pop(); lines.forEach(take);
-        if (onText) onText(text);
-      }
-      take(buf);
-    } catch(e){ clearTimeout(timer); last = {status:0, message: ctl.signal.aborted ? 'timeout' : 'network', model:m}; continue; }
-    clearTimeout(timer);
-    if (text) return text;
-    last = {status:-4, message: blocked || 'empty', model:m};
+    if (res.text) return res.text;
+    last = res.err;
+    if (![0,-4,404,429,500,503].includes(last.status)) break;
   }
   throw last;
 }
-async function askAI(prompt, useUrl, image, onText){
-  if (hasGemini()) return await gemini(prompt, useUrl, image, onText);
+// One streamed request. iPhones drop requests that sit silent for 60 seconds, so the answer is read as it arrives.
+async function geminiCall(m, body, onText){
+  const g = getGem(); const ctl = new AbortController(); let timer = setTimeout(()=>ctl.abort(), 50000);
+  const bump = () => { clearTimeout(timer); timer = setTimeout(()=>ctl.abort(), 50000); };
+  let r;
+  try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:streamGenerateContent?alt=sse`, {method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':g.key}, body:JSON.stringify(body), signal:ctl.signal}); }
+  catch(e){ clearTimeout(timer); return {err:{status:0, message: ctl.signal.aborted ? 'timeout' : 'network', model:m}}; }
+  if (!r.ok){
+    clearTimeout(timer);
+    const e = await r.json().catch(()=>({})); const er = Array.isArray(e) ? e[0] : e;
+    return {err:{status:r.status, message:(er && er.error && er.error.message)||r.statusText, model:m}};
+  }
+  let text = '', buf = '', blocked = '';
+  try {
+    const rd = r.body.getReader(), dec = new TextDecoder();
+    const take = line => {
+      line = line.trim(); if (!line.startsWith('data:')) return;
+      let j; try { j = JSON.parse(line.slice(5)); } catch(e){ return; }
+      if (j.promptFeedback && j.promptFeedback.blockReason) blocked = j.promptFeedback.blockReason;
+      const c = j.candidates && j.candidates[0];
+      ((c && c.content && c.content.parts) || []).forEach(p=>{ if (!p.thought && p.text) text += p.text; });
+    };
+    for (;;){
+      const {value, done} = await rd.read(); if (done) break; bump();
+      buf += dec.decode(value, {stream:true}); const lines = buf.split('\n'); buf = lines.pop(); lines.forEach(take);
+      if (onText) onText(text);
+    }
+    take(buf);
+  } catch(e){ clearTimeout(timer); return {err:{status:0, message: ctl.signal.aborted ? 'timeout' : 'network', model:m}}; }
+  clearTimeout(timer);
+  return text ? {text} : {err:{status:-4, message: blocked || 'empty', model:m}};
+}
+async function askAI(prompt, useUrl, image, onText, schema){
+  if (hasGemini()) return await gemini(prompt, useUrl, image, onText, schema);
   if (sampleFn && !useUrl && !image){ const res = await sampleFn(prompt, {modelTier:'default'}); return (res && res.text) || ''; }
   throw {status:-1, message:'no-ai'};
 }
 function aiErrMsg(e){
   if (!e) return 'Something went wrong. Try again.';
   if (e.status===-1) return 'Add your free Gemini key in Preferences first.';
+  if (e.status===-2 || e instanceof SyntaxError) return 'The AI sent back a reply the app couldn’t read. Try again.';
   if (e.status===0) return navigator.onLine===false ? 'No internet connection.' : (e.message==='timeout' ? 'The AI took too long to answer. Try again, or switch to Flash-Lite in Preferences.' : 'Couldn’t connect to Gemini. Check your signal and try again.');
   if (e.status===-4) return 'Gemini sent back an empty answer' + (e.message && e.message!=='empty' ? ' ('+e.message+')' : '') + '. Try again.';
   if (e.status===400 && /api key/i.test(e.message||'')) return 'Your Gemini key was rejected. Check it in Preferences.';
@@ -893,7 +898,45 @@ function aiErrMsg(e){
   if (e.status===429 || e.code==='rate_limited') return 'Free daily limit reached. It resets at 8am UK time.';
   return 'Gemini error ' + (e.status||e.code||'') + (e.message ? ': ' + String(e.message).slice(0,140) : '') + '. Try again.';
 }
-function parseJSON(txt){ txt = String(txt||''); const a = txt.indexOf('{'), b = txt.lastIndexOf('}'); if (a<0||b<a) throw {status:-2}; return JSON.parse(txt.slice(a,b+1)); }
+// Reads the AI's JSON, and rescues what it can if the reply is cut off or has small mistakes.
+function parseJSON(txt){
+  txt = String(txt||'').replace(/```(?:json)?/gi, ''); const a = txt.indexOf('{'); if (a<0) throw {status:-2};
+  let s = txt.slice(a);
+  const tryP = x => { try { return JSON.parse(x); } catch(e){ try { return JSON.parse(x.replace(/,\s*([}\]])/g, '$1')); } catch(e2){ return undefined; } } };
+  let v = tryP(s.slice(0, s.lastIndexOf('}')+1)); if (v !== undefined) return v;
+  // Cut back to the last complete object and close whatever was still open.
+  let cuts = 0;
+  for (let end = s.lastIndexOf('}'); end > 0 && cuts < 80; end = s.lastIndexOf('}', end-1), cuts++){
+    const pre = s.slice(0, end+1); const stack = []; let inStr = false, esc = false;
+    for (const ch of pre){
+      if (inStr){ if (esc) esc = false; else if (ch==='\\') esc = true; else if (ch==='"') inStr = false; continue; }
+      if (ch==='"') inStr = true; else if (ch==='{'||ch==='[') stack.push(ch); else if (ch==='}'||ch===']') stack.pop();
+    }
+    if (inStr) continue;
+    v = tryP(pre + stack.reverse().map(c=>c==='{'?'}':']').join('')); if (v !== undefined) return v;
+  }
+  throw {status:-2};
+}
+// Ask for JSON; if the reply can't be read, ask once more (using the lighter model if that's not the one in use).
+async function askJSON(prompt, o){
+  o = o || {};
+  try { return parseJSON(await askAI(prompt, o.url, o.image, o.onText, o.schema)); }
+  catch(e){
+    if (!(e && (e.status===-2 || e instanceof SyntaxError))) throw e;
+    const g = getGem(); const alt = hasGemini() ? ((g.model||'gemini-3.5-flash')==='gemini-3.1-flash-lite' ? 'gemini-3.5-flash' : 'gemini-3.1-flash-lite') : null;
+    try { return parseJSON(hasGemini() ? await gemini(prompt, o.url, o.image, o.onText, o.schema, alt) : await askAI(prompt, o.url, o.image, o.onText, o.schema)); }
+    catch(e2){ if (e2 && (e2.status===-2 || e2 instanceof SyntaxError)) throw {status:-2}; throw e2; }
+  }
+}
+const S_STR = {type:'STRING'}, S_LIST = {type:'ARRAY', items:{type:'STRING'}};
+const S_RECIPE = {type:'OBJECT', properties:{
+  name:S_STR, servings:{type:'INTEGER'}, time:{type:'INTEGER'}, protein:{type:'INTEGER'}, tags:S_LIST, equipment:S_LIST, why:S_STR,
+  ingredients:{type:'ARRAY', items:{type:'OBJECT', properties:{label:S_STR, key:S_STR, optional:{type:'BOOLEAN'}}, required:['label','key']}},
+  spices:S_LIST, steps:S_LIST,
+  alt:{type:'OBJECT', properties:{airfryer:S_STR, slowcooker:S_STR, pressure:S_STR}},
+  error:S_STR}};
+const S_IDEAS = {type:'OBJECT', properties:{recipes:{type:'ARRAY', items:S_RECIPE}}, required:['recipes']};
+const S_SCAN = {type:'OBJECT', properties:{items:{type:'ARRAY', items:{type:'OBJECT', properties:{name:S_STR, qty:S_STR}, required:['name']}}}, required:['items']};
 function toRecipe(o, src){
   const eq = Array.isArray(o.equipment) ? [...new Set(o.equipment.map(eqKey).filter(Boolean))] : null;
   const alt = {}; if (o.alt && typeof o.alt==='object') for (const k in o.alt){ const kk = eqKey(k); if (kk && o.alt[k]) alt[kk] = String(o.alt[k]).slice(0,300); }
@@ -917,7 +960,7 @@ async function runImport(input, el, image){
 {"name":"","servings":4,"time":30,"protein":30,"tags":[],"equipment":["hob"],"ingredients":[{"label":"500g chicken thighs","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]${sp.length?',"alt":{"'+sp[0]+'":""}':''}}
 ${JSON_RULES} Write the steps as short, clear instructions in your own words, keeping amounts, times and temperatures.${sp.length?` The cook also owns: ${sp.map(applName).join(', ')}. In "alt", for each of those that could sensibly cook this dish, give a one-sentence adaptation with temperature and time, using the keys ${sp.join(', ')}; leave out any that do not suit.`:''} If there is no recipe, or you cannot open the page, reply {"error":"short reason"}.`;
   try {
-    const j = parseJSON(await askAI(prompt, url, image));
+    const j = await askJSON(prompt, {url, image, schema:S_RECIPE});
     if (j.error || !(j.ingredients||[]).length) throw {status:-3, message:j.error||''};
     const r = toRecipe({...j, source: url ? input : ''}, 'import');
     state.saved.unshift(r); save();
@@ -971,7 +1014,8 @@ Reply with ONLY JSON, no prose:
 {"recipes":[{"name":"","time":30,"protein":35,"tags":[],"equipment":["hob"],"why":"one short line on what it uses up","ingredients":[{"label":"200g chicken breast","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}]}
 ${JSON_RULES}`;
   try {
-    const j = parseJSON(await askAI(prompt, false, null, t=>{ const n = (t.match(/"name"/g)||[]).length; const el = $('#aiProg'); if (el) el.textContent = n ? `Writing recipe ${Math.min(3,n)} of 3…` : 'Thinking…'; }));
+    const j = await askJSON(prompt, {schema:S_IDEAS, onText:t=>{ const n = (t.match(/"name"/g)||[]).length; const el = $('#aiProg'); if (el) el.textContent = n ? `Writing recipe ${Math.min(3,n)} of 3…` : 'Thinking…'; }});
+
 
     ai.recipes = (j.recipes||[]).slice(0,4).map(o=>toRecipe(o,'ai'));
     ai.status = 'done'; if(!ai.recipes.length) ai.err='No ideas came back — try again.';
