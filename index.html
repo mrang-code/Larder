@@ -210,7 +210,7 @@ nav button{font-size:11px}
 .leftl input:disabled{opacity:.4}
 .pmac{font-size:12px;color:var(--green);font-weight:600;margin-top:2px}
 .pmeal .slot{width:66px;flex:none;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;padding-top:3px}
-.pmeal.empty{align-items:center}
+.pmeal.empty{align-items:center;padding:10px 0 0;text-align:left}
 .pmeal .x{font-size:18px}
 .pneed{color:var(--amber) !important;font-weight:600}
 .pgood{color:var(--green) !important}
@@ -220,6 +220,9 @@ nav button{font-size:11px}
 .mbar i.ok{background:var(--green)}.mbar i.over{background:var(--red)}
 .plansum{display:flex;align-items:center;gap:12px;padding:12px 14px;margin-bottom:12px}
 .ptip{margin:8px 0 0;color:var(--amber)}
+.pmeal.done .rname{color:var(--muted)}
+.pmeal.past .slot{opacity:.6}
+.tick-ate{color:var(--green) !important;font-weight:700}
 .onb-body h2{margin:10px 0 4px;font-size:25px}
 .onb-big{font-size:46px;margin-top:10px}
 .dots{display:flex;gap:6px;flex:1}.dots i{width:22px;height:5px;border-radius:3px;background:var(--line)}.dots i.on{background:var(--green)}
@@ -676,7 +679,7 @@ function vList(){
 
 /* ---------- sheets ---------- */
 function openSheet(html, mount){ $('#sheetBody').innerHTML = html; $('#app').classList.add('open'); if (mount) mount($('#sheetBody')); }
-function closeSheet(){ $('#app').classList.remove('open'); afterOverlay(); }
+function closeSheet(){ $('#app').classList.remove('open'); ui.doneAfter = null; afterOverlay(); }
 let toastT=null;
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.remove('act'); t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2400); }
 const head = (title, extra='') => `<div class="shead"><h2>${title}</h2>${extra}<button class="x" data-act="close" aria-label="Close" style="font-size:26px">×</button></div>`;
@@ -887,6 +890,7 @@ function sheetCook(r, e){
         if (el.querySelector('#cLeft').checked){ const lp = leftN();
           state.items.push({id:uid(), name:'Leftover '+r.n.charAt(0).toLowerCase()+r.n.slice(1), qty: lp>=1 ? fmtNum(lp)+' portion'+(lp>1?'s':'') : '', cat:'Leftovers', loc:'fridge', exp:addDays(3), added:iso(today()), listed:false, left:true, rid:r.id}); }
         const t = iso(today()); if (state.plan[t]){ state.plan[t] = state.plan[t].filter(x=>{ const pe0 = pe(x); return !(pe0.id===r.id && !pe0.left); }); if (!state.plan[t].length) delete state.plan[t]; }
+        if (ui.doneAfter){ markDone(ui.doneAfter, true); ui.doneAfter = null; }
         sweep(); save(); closeSheet(); render(); toastUndo(eaten > 0 ? 'Kitchen updated · added to your food diary' : 'Kitchen updated');
       };
     });
@@ -913,7 +917,7 @@ function sheetSettings(focus){
     <h3 style="margin:26px 0 6px" id="aiSec">AI (Gemini)</h3>
     <p class="note" style="margin-top:0">Used for importing recipes, scanning receipts and recipe ideas. Get a free key at aistudio.google.com → Get API key. It stays on this phone.</p>
     <label class="f">Gemini API key</label><input type="password" class="key" id="gKey" value="${esc(getGem().key||'')}" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <label class="f">Model</label><select id="gModel">${[['gemini-3.5-flash','Gemini 3.5 Flash (free, best)'],['gemini-3.1-flash-lite','Gemini 3.1 Flash-Lite (free, fastest)']].map(([v,l])=>`<option value="${v}" ${(getGem().model||'gemini-3.5-flash')===v?'selected':''}>${l}</option>`).join('')}</select>
+    <label class="f">Model</label><select id="gModel">${[['gemini-3.5-flash','Gemini 3.5 Flash (free, recommended)'],['gemini-3.1-flash-lite','Gemini 3.1 Flash-Lite (free, fastest)'],['gemini-3.1-pro-preview','Gemini 3.1 Pro (smartest, needs billing on)']].map(([v,l])=>`<option value="${v}" ${(getGem().model||'gemini-3.5-flash')===v?'selected':''}>${l}</option>`).join('')}</select>
     <div class="actions"><button class="btn ghost" id="gTest">Save & test key</button></div><p class="note" id="gStatus"></p>
 
     <h3 style="margin:26px 0 6px" id="srvSec">Your Larder server</h3>
@@ -1912,7 +1916,7 @@ function getDiary(){ try { const d = JSON.parse(localStorage.getItem(DIARY_LS)||
 function setDiary(d){ const cut = addDays(-180); d.entries = d.entries.filter(e=>e.d >= cut); try { localStorage.setItem(DIARY_LS, JSON.stringify(d)); } catch(e){} mirrorNotify(); }
 const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); };
 function mealFor(t){ const h = +String(t).slice(0,2); return h < 11 ? 'Breakfast' : h < 15 ? 'Lunch' : h < 17 ? 'Snack' : 'Dinner'; }
-function diaryAdd(e){ const d = getDiary(), t = nowHM(); const en = {id:uid(), d:iso(today()), t, m:mealFor(t), ...e}; d.entries.push(en); setDiary(d); return en; }
+function diaryAdd(e){ const d = getDiary(), t = nowHM(); const en = {id:uid(), d:iso(today()), t, m:ui.doneAfter ? SLOT[ui.doneAfter] : mealFor(t), ...e}; d.entries.push(en); setDiary(d); return en; }
 // A portion of a recipe: its ingredients scaled to what you ate.
 function portionOf(r, servings){ const f = servings / servesOf(r); return {ings:r.i.map(x=>scaleLabel(x[0], f)), kcal:Math.round(kcalOf(r)*servings), p:Math.round((r.p||0)*servings)}; }
 function diaryMeal(r, servings, name){
@@ -2096,7 +2100,26 @@ function bestFor(k, m, tk, tp, ctx){
   }
   return top;
 }
-function dayRemaining(d, T){ let k = T.k, p = T.p; const es = dayEntries(d); es.forEach(e=>{ const x = entryMacros(e); k -= x.k; p -= x.p; }); return {k, p, empty:SLOTS.filter(m=>!es.some(e=>e.m===m))}; }
+function dayRemaining(d, T){
+  let k = T.k, p = T.p; const es = dayEntries(d), isT = d===iso(today()), done = m => isT && slotDone(m);
+  SLOTS.forEach(m=>{
+    if (isT && !done(m) && slotPassed(m) && !es.some(e=>e.m===m)){ k -= T.k*SHARE[m]; p -= T.p*SHARE[m]; return; }
+    if (!done(m)) return;
+    const de = diaryFor(m), kc = de.reduce((a,e)=>a+(e.kcal||0),0), pr = de.reduce((a,e)=>a+(e.p||0),0), pl = es.filter(e=>e.m===m);
+    if (kc){ k -= kc; p -= pr; }
+    else if (pl.length) pl.forEach(e=>{ const x = entryMacros(e); k -= x.k; p -= x.p; });
+    else { k -= T.k*SHARE[m]; p -= T.p*SHARE[m]; } });
+  es.forEach(e=>{ if (!done(e.m)){ const x = entryMacros(e); k -= x.k; p -= x.p; } });
+  return {k:Math.round(k), p:Math.round(p), empty:SLOTS.filter(m=>!es.some(e=>e.m===m) && !(isT && (done(m) || slotPassed(m))))};
+}
+const DONE_LS = 'larder-done', SLOT_END = {b:11, l:15, d:21.5};
+function doneToday(){ try { const d = JSON.parse(localStorage.getItem(DONE_LS)||'{}'); return new Set(d.d===iso(today()) ? (d.s||[]) : []); } catch(e){ return new Set(); } }
+function setDone(set){ try { localStorage.setItem(DONE_LS, JSON.stringify({d:iso(today()), s:[...set]})); } catch(e){} }
+function slotPassed(m){ const n = new Date(); return n.getHours() + n.getMinutes()/60 >= SLOT_END[m]; }
+function diaryFor(m){ const t = iso(today()); return getDiary().entries.filter(e=>e.d===t && e.ate && e.m===SLOT[m]); }
+function slotDone(m){ return doneToday().has(m) || diaryFor(m).length > 0; }
+function slotSkip(k, m){ return k===0 && (slotDone(m) || slotPassed(m)); }
+function markDone(m, on){ const s = doneToday(); if (on) s.add(m); else s.delete(m); setDone(s); }
 function autoPlan(){
   const T = planTargets(), ppl = planPeople(), leftLunch = state.prefs.leftLunch !== false;
   const sim = simulatePlan();
@@ -2117,8 +2140,8 @@ function autoPlan(){
     if (left){ planAdd(addDays(k+1), b.r, 'l', b.pp, true); placed++; kitchen++; }
     return true;
   };
-  for (let k = 0; k < 7; k++) for (const m of ['d','l','b']) if (!has(addDays(k), m) && !fill(k, m, true)) later.push([k, m]);
-  later.forEach(([k, m])=>{ if (!has(addDays(k), m)) fill(k, m, false); });
+  for (let k = 0; k < 7; k++) for (const m of ['d','l','b']) if (!has(addDays(k), m) && !slotSkip(k, m) && !fill(k, m, true)) later.push([k, m]);
+  later.forEach(([k, m])=>{ if (!has(addDays(k), m) && !slotSkip(k, m)) fill(k, m, false); });
   return {placed, kitchen};
 }
 function portionText(p){ return p===1 ? '1 serving' : niceNum(p) + ' servings'; }
@@ -2134,21 +2157,26 @@ function vPlan(){
     h += `<div class="card plansum"><div class="rmain"><b>${fromK} of ${all.length} meals</b> come from what you have<div class="rsub">${buy.length ? `${buy.length} thing${buy.length>1?'s':''} to buy for the rest` : 'Nothing to buy'}</div></div>${buy.length?'<button class="btn sm pri" data-act="plan-list">Add to list</button>':''}</div>`;
   }
   days.forEach((d,k)=>{
-    const es = dayEntries(d); let tk = 0, tp = 0; es.forEach(e=>{ const x = entryMacros(e); tk += x.k; tp += x.p; });
+    const es = dayEntries(d), isT = k===0, rem = dayRemaining(d, T), tk = T.k - rem.k, tp = T.p - rem.p;
     const bar = (v, t) => `<i style="width:${Math.min(100, Math.round(v/t*100))}%" class="${v > t*1.15 ? 'over' : v >= t*0.85 ? 'ok' : ''}"></i>`;
-    h += `<div class="card pday"><div class="pday-h"><div><b>${dayLabel(d)}</b><small>${dayShort(d)}</small></div>${es.length?`<div class="pmacs"><span>${tk.toLocaleString()} / ${T.k.toLocaleString()} kcal</span><div class="mbar">${bar(tk, T.k)}</div><span>${tp} / ${T.p}g protein</span><div class="mbar">${bar(tp, T.p)}</div></div>`:''}</div>`;
+    h += `<div class="card pday"><div class="pday-h"><div><b>${dayLabel(d)}</b><small>${dayShort(d)}</small></div>${es.length || (isT && SLOTS.some(slotDone))?`<div class="pmacs"><span>${tk.toLocaleString()} / ${T.k.toLocaleString()} kcal</span><div class="mbar">${bar(tk, T.k)}</div><span>${tp} / ${T.p}g protein</span><div class="mbar">${bar(tp, T.p)}</div></div>`:''}</div>`;
     SLOTS.forEach(m=>{
       const xs = es.filter(e=>e.m===m);
-      if (!xs.length){ h += `<div class="pmeal empty"><span class="slot">${SLOT[m]}</span><button class="link" data-act="plan-pick" data-d="${d}" data-m="${m}">+ Add</button></div>`; return; }
+      if (isT && slotDone(m)){
+        const de = diaryFor(m), kc = de.reduce((a,e)=>a+(e.kcal||0),0), names = de.map(e=>e.n).concat(de.length ? [] : xs.map(e=>(recipeById(e.id)||{}).n).filter(Boolean));
+        h += `<div class="pmeal done"><span class="slot">${SLOT[m]}</span><div class="rmain"><div class="rname">${esc(names.join(', ') || 'Eaten')}</div><div class="rsub pgood">✓ ${de.length ? 'in your food diary' : 'eaten'}${kc?` · ~${kc} kcal`:''}</div></div>${de.length ? '' : `<button class="x" data-act="plan-undone" data-m="${m}" aria-label="Not eaten yet" title="Not eaten yet">↺</button>`}</div>`; return; }
+      if (!xs.length){
+        const past = isT && slotPassed(m);
+        h += `<div class="pmeal empty${past?' past':''}"><span class="slot">${SLOT[m]}</span>${past?'<span class="note" style="margin:0">Time’s passed</span>':''}<span style="flex:1"></span><button class="link" data-act="plan-pick" data-d="${d}" data-m="${m}">+ Add</button>${isT?`<button class="link" data-act="plan-had" data-m="${m}" style="margin-left:14px">Had it</button>`:''}</div>`; return; }
       xs.forEach(e=>{ const v = info.get(d + '|' + e.raw), r = recipeById(e.id); if (!r) return; const x = entryMacros(e);
         const status = e.left ? 'leftovers from last night' : !v ? '' : v.buy.length ? 'need ' + v.buy.map(y=>esc(stripAmt(y.label).toLowerCase())).join(', ') : (v.short||[]).length ? 'need more ' + v.short.map(y=>esc(y.item.name)).join(', ') : 'from your kitchen';
         h += `<div class="pmeal"><span class="slot">${SLOT[m]}</span><div class="rmain" data-act="plan-open" data-d="${d}" data-e="${esc(e.raw)}"><div class="rname">${isFav(r.id)?'<span class="star">★</span> ':''}${esc(r.n)}</div>
           <div class="rsub">${portionText(e.p)}${x.k?` · ~${x.k} kcal`:''}${x.p?` · ${x.p}g protein`:''}${v && v.leftNext ? ' · cook double for tomorrow' : ''}</div>
           <div class="rsub ${status.startsWith('need')?'pneed':status==='from your kitchen'?'pgood':''}">${status}</div>
           ${v && v.gone && v.gone.length ? `<div class="pwarn">Your ${v.gone.map(it=>esc(it.name.toLowerCase())).join(', ')} will be past ${v.gone.length>1?'their':'its'} date by then, so ${v.gone.length>1?'they’re':'it’s'} on the shopping list. Or freeze ${v.gone.length>1?'them':'it'} now and keep ${v.gone.length>1?'them':'it'}.</div>` : ''}</div>
-          ${e.left ? '' : `<button class="x" data-act="plan-swap" data-d="${d}" data-e="${esc(e.raw)}" aria-label="Swap" title="Swap">↻</button>`}<button class="x" data-act="plan-rm" data-d="${d}" data-e="${esc(e.raw)}" aria-label="Remove">×</button></div>`; });
+          ${isT ? `<button class="x tick-ate" data-act="plan-ate" data-d="${d}" data-e="${esc(e.raw)}" aria-label="I ate this" title="I ate this">✓</button>` : ''}${e.left ? '' : `<button class="x" data-act="plan-swap" data-d="${d}" data-e="${esc(e.raw)}" aria-label="Swap" title="Swap">↻</button>`}<button class="x" data-act="plan-rm" data-d="${d}" data-e="${esc(e.raw)}" aria-label="Remove">×</button></div>`; });
     });
-    if (es.length === 3){ const gp = T.p - tp, gk = T.k - tk;
+    if (SLOTS.every(m=>es.some(e=>e.m===m) || (isT && slotDone(m)))){ const gp = T.p - tp, gk = T.k - tk;
       const tip = gp > T.p*0.15 ? `About ${gp}g protein short — a snack like 200g Greek yogurt (~20g) or a protein shake would cover it.` : gk > T.k*0.15 ? `About ${gk} kcal under your target — add a snack.` : -gk > T.k*0.15 ? `About ${-gk} kcal over your target.` : '';
       if (tip) h += `<p class="note ptip">${tip}</p>`; }
     h += `</div>`;
@@ -2180,11 +2208,21 @@ function sheetPlanDay(r){
       el.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{ planAdd(b.dataset.day, r, m, ui.serves[r.id] ? Math.max(0.5, Math.round(ui.serves[r.id]/planPeople()*2)/2) : 1); save(); closeSheet(); render(); toast(`Planned for ${SLOT[m].toLowerCase()}, ${dayLabel(b.dataset.day).toLowerCase()}`); });
     });
 }
-function openPlanned(d, raw){
+function atePlanned(d, raw){
+  const e = pe(raw), r = recipeById(e.id); if (!r) return;
+  if (e.left){
+    const lo = state.items.find(it=>it.left && it.rid===e.id);
+    if (lo){ markDone(e.m, true); ui.doneAfter = e.m; itemGone(lo.id, 'used', false); ui.doneAfter = null; return; }
+    ui.doneAfter = e.m; diaryMeal(r, e.p, 'Leftover ' + r.n.charAt(0).toLowerCase() + r.n.slice(1)); ui.doneAfter = null; markDone(e.m, true); render(); toast('Added to your food diary'); return;
+  }
+  openPlanned(d, raw, true);
+}
+function openPlanned(d, raw, cookNow){
   const e = pe(raw), r = recipeById(e.id); if (!r) return;
   const v = simulatePlan().info.get(d + '|' + raw);
   ui.serves[r.id] = Math.max(1, Math.round(planPeople() * e.p * (v && v.leftNext ? 2 : 1) * 2) / 2);
   ui.eat = ui.eat || {}; ui.eat[r.id] = e.p;
+  if (cookNow){ sheetCook(r, evalRecipe(r, {scale:ui.serves[r.id] / servesOf(r)})); ui.doneAfter = e.m; return; }
   sheetRecipe(r.id);
 }
 
@@ -2206,10 +2244,13 @@ document.addEventListener('click', ev=>{
   if (a==='stats') return sheetStats();
   if (a==='undo') return doUndo();
   if (a==='listview'){ ui.listView = b.dataset.v; return render(); }
-  if (a==='autoplan'){ if (!state.items.length && !confirmEmptyPlan()) return; const res = autoPlan(); save(); render(); toast(res.placed ? `Planned ${res.placed} meal${res.placed>1?'s':''} · ${res.kitchen} from what you have` : 'Your week is already full'); return; }
+  if (a==='autoplan'){ if (!state.items.length && !confirmEmptyPlan()) return; const res = autoPlan(); save(); render(); const sk = SLOTS.filter(m=>slotSkip(0, m)).map(m=>SLOT[m].toLowerCase()); toast(res.placed ? `Planned ${res.placed} meal${res.placed>1?'s':''} · ${res.kitchen} from what you have${sk.length?` · skipped today’s ${sk.length>1 ? sk.slice(0,-1).join(', ')+' and '+sk[sk.length-1] : sk[0]}`:''}` : 'Your week is already full'); return; }
   if (a==='plan-pick') return sheetPlanPick(b.dataset.d, b.dataset.m);
   if (a==='plan-swap') return sheetPlanPick(b.dataset.d, null, b.dataset.e);
   if (a==='plan-open') return openPlanned(b.dataset.d, b.dataset.e);
+  if (a==='plan-ate') return atePlanned(b.dataset.d, b.dataset.e);
+  if (a==='plan-had'){ markDone(b.dataset.m, true); render(); toast(`${SLOT[b.dataset.m]} marked as eaten. Add what you had in the food diary to count it.`); return; }
+  if (a==='plan-undone'){ markDone(b.dataset.m, false); render(); return; }
   if (a==='plan-rm'){ snapUndo(); planRemove(b.dataset.d, b.dataset.e); save(); render(); toastUndo('Removed from the plan'); return; }
   if (a==='plan-clear'){ snapUndo(); state.plan = {}; save(); render(); toastUndo('Week cleared'); return; }
   if (a==='plan-list'){ let n = 0; planMissing().forEach(x=>{ if (addToList(x.label, `${x.amt} · for ${x.r.n}`)) n++; }); save(); render(); toast(n ? `${n} added to your list` : 'Already on your list'); return; }
