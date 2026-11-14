@@ -97,7 +97,7 @@ h3{margin:0;font-size:16px;font-weight:600}
 .ai{padding:14px;margin:6px 0 4px;background:linear-gradient(135deg,var(--green-soft),var(--card))}
 .ai p{margin:4px 0 10px;font-size:13.5px;color:var(--muted)}
 .inrow{display:flex;gap:8px}
-input[type=text],input[type=password],input[type=date],input[type=search],select,textarea{width:100%;border:1px solid var(--line);background:var(--card);border-radius:11px;padding:10px 12px;outline:none}
+input[type=text],input[type=password],input[type=date],input[type=search],input[type=number],select,textarea{width:100%;border:1px solid var(--line);background:var(--card);border-radius:11px;padding:10px 12px;outline:none}
 input:focus,select:focus,textarea:focus{border-color:var(--green)}
 textarea{min-height:110px;resize:vertical}
 label.f{display:block;font-size:12.5px;color:var(--muted);font-weight:600;margin:12px 0 5px}
@@ -150,7 +150,7 @@ input[type=range]{width:100%;accent-color:var(--green)}
 .key{font-family:ui-monospace,Menlo,monospace;font-size:13px}
 .hint{padding:14px;margin:6px 0 4px}
 .hint p{margin:4px 0 10px;font-size:13.5px;color:var(--muted)}
-input[type=text],input[type=password],input[type=date],input[type=search],select,textarea,.prow input,.prow select{font-size:16px}
+input[type=text],input[type=password],input[type=date],input[type=search],input[type=number],select,textarea,.prow input,.prow select{font-size:16px}
 button,.chip,.row,label.btn{touch-action:manipulation}
 label.btn{cursor:pointer;display:block}
 nav button{font-size:11px}
@@ -445,11 +445,28 @@ function sweep(){
   if (prunePlan()) ch=true;
   return ch;
 }
-function addItem(name, qty, loc, exp){
+/* ---------- label nutrition (per 100g / 100ml) ---------- */
+const r1 = x => Math.round(x*10)/10;
+function cleanNut(n){ if (!n) return null; const o = {}; ['k','p','c','f'].forEach(x=>{ const v = parseFloat(n[x]); if (v >= 0 && v < 1000) o[x] = x==='k' ? Math.round(v) : r1(v); }); return o.k != null || o.p != null ? o : null; }
+// Weight of one piece, from "4 x 125g" or a label serving size.
+function pieceG(it){ const m = String(it.qty||'').match(/x\s*(\d+(?:[.,]\d+)?)\s*(g|ml)\b/i); return m ? parseFloat(m[1].replace(',','.')) : (it.pg || 0); }
+// Grams (or ml) in an amount like "30g", "2 slices"(unknown), "1 pot" (if piece weight known).
+function gramsIn(amt, pg){ const q = parseQty(amt); if (!q) return 0; if (q.d==='g' || q.d==='ml') return q.n; return pg && (!q.w || /pot|tub|piece|bar|pack|bottle|can|tin/.test(q.w)) ? q.n*pg : 0; }
+function applyNut(e){ if (!e.nut || e.k==='meal') return e; const g = gramsIn(e.amt, e.pg);
+  if (g){ e.kcal = e.nut.k != null ? Math.round(e.nut.k*g/100) : 0; e.p = e.nut.p != null ? Math.round(e.nut.p*g/100) : 0; } else { delete e.kcal; delete e.p; } return e; }
+function nutLine(n){ return [n.k!=null?`${n.k} kcal`:'', n.p!=null?`${n.p}g protein`:'', n.c!=null?`${n.c}g carbs`:'', n.f!=null?`${n.f}g fat`:''].filter(Boolean).join(', '); }
+function itemNutFields(it){ return {...(it.nut ? {nut:it.nut} : {}), ...(it.lab ? {lab:it.lab} : {}), ...(pieceG(it) ? {pg:pieceG(it)} : {})}; }
+const sNut = () => ({type:'OBJECT', properties:{product:S_STR, kcal:{type:'NUMBER'}, protein:{type:'NUMBER'}, carbs:{type:'NUMBER'}, fat:{type:'NUMBER'}, serving_g:{type:'NUMBER'}, error:S_STR}, propertyOrdering:['error','product','kcal','protein','carbs','fat','serving_g']});
+async function readLabel(image){
+  const j = await askJSON(`This is a photo of a food product's nutrition label or packaging. Read the values PER 100g (or per 100ml for drinks) from the label. Use the per-100g column, not per serving. kcal is the energy in kcal, not kJ. Also give the product name with brand as printed, and the grams in one serving or one piece if the label says. If you can't see a nutrition table, put a short reason in "error".`, {image, schema:sNut()});
+  if (j.error && j.kcal == null) throw {status:-3, message:j.error};
+  return {nut:cleanNut({k:j.kcal, p:j.protein, c:j.carbs, f:j.fat}), lab:String(j.product||'').trim().slice(0,60), pg:+j.serving_g || 0};
+}
+function addItem(name, qty, loc, exp, extra){
   const c = classify(name);
   if (c.spice){ addSpice(name, 100); return 'spice'; }
   loc = loc || c.loc;
-  state.items.push({id:uid(), name:cap(name.trim()), qty:qty||'', cat:c.cat, loc, exp: exp || defaultExp(name, loc), added:iso(today()), listed:false});
+  state.items.push({id:uid(), name:cap(name.trim()), qty:qty||'', cat:c.cat, loc, exp: exp || defaultExp(name, loc), added:iso(today()), listed:false, ...(extra||{})});
   return 'item';
 }
 function addSpice(name, level){
@@ -739,7 +756,7 @@ function sheetPreview(toks, raw){
           else {
             const nm=r.name.trim().toLowerCase();
             state.items = state.items.filter(it=>!(daysLeft(it)<0 && it.name.toLowerCase()===nm));
-            addItem(r.name, r.qty, r.loc, r.exp || undefined); ni++;
+            addItem(r.name, r.qty, r.loc, r.exp || undefined, r.extra); ni++;
           }
           state.list = state.list.filter(x=>x.name.toLowerCase()!==r.name.trim().toLowerCase());
         });
@@ -760,10 +777,22 @@ function sheetEdit(id){
     ${hq?`<div class="chips" style="margin-top:8px"><span class="note" style="align-self:center">Used some?</span>${[[.75,'¾ left'],[.5,'½ left'],[.25,'¼ left']].map(([f,l])=>`<button class="chip" data-frac="${f}">${l}</button>`).join('')}</div>`:''}
     <label class="f">Use by</label><input type="date" id="eExp" value="${it.exp}">
     <div class="chips" style="margin-top:8px"><button class="chip" data-plus="1">+1 day</button><button class="chip" data-plus="3">+3 days</button><button class="chip" data-plus="7">+1 week</button><button class="chip" data-reset="1">Reset</button></div>
+    ${it.left ? '' : `<label class="f">Per 100g from the label: kcal and protein (g)${it.lab?` · ${esc(it.lab)}`:''}</label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><input type="number" inputmode="decimal" id="eKcal" placeholder="kcal" aria-label="kcal per 100g" value="${it.nut&&it.nut.k!=null?it.nut.k:''}"><input type="number" inputmode="decimal" id="eProt" placeholder="protein (g)" aria-label="protein grams per 100g" value="${it.nut&&it.nut.p!=null?it.nut.p:''}"></div>
+    ${hasGemini()?`<div class="actions" style="margin-top:6px"><label class="btn ghost" style="text-align:center">📷 Read the label<input type="file" accept="image/*" id="eLabel" hidden></label></div>`:''}<p class="note" id="eNutMsg" style="margin-top:4px">Optional. Used to count calories and protein when you eat it.</p>`}
     <label class="check"><input type="checkbox" id="eList" ${it.left?'':'checked'}> Add to shopping list when it's gone</label>
     <div class="actions"><button class="btn pri" id="eSave">Save</button>${it.loc!=='freezer'?'<button class="btn ghost" id="eFreeze">❄️ Freeze it</button>':''}</div>
     <div class="actions" style="margin-top:8px"><button class="btn ghost" id="eUsed">Used it up</button><button class="btn danger" id="eBin">Binned it</button></div>`, el=>{
-      const exp = el.querySelector('#eExp'), qty = el.querySelector('#eQty');
+      const exp = el.querySelector('#eExp'), qty = el.querySelector('#eQty'); let lbl = null;
+      const lf = el.querySelector('#eLabel'); if (lf) lf.onchange = async ev => {
+        const f = ev.target.files[0], msg = el.querySelector('#eNutMsg'); if (!f) return;
+        msg.innerHTML = '<span class="spin"></span>Reading the label…';
+        try { const img = await fileToJpeg(f); lbl = await readLabel(img);
+          if (!lbl.nut){ msg.textContent = 'Couldn’t read the numbers. Try a closer photo of the nutrition table.'; lbl = null; return; }
+          if (lbl.nut.k != null) el.querySelector('#eKcal').value = lbl.nut.k; if (lbl.nut.p != null) el.querySelector('#eProt').value = lbl.nut.p;
+          msg.textContent = `✓ ${lbl.lab ? lbl.lab + ': ' : ''}${nutLine(lbl.nut)} per 100g. Tap Save to keep it.`;
+        } catch(e){ msg.textContent = e && e.status===-3 ? 'Couldn’t see a nutrition table: ' + e.message : aiErrMsg(e); lbl = null; }
+      };
       el.querySelectorAll('[data-frac]').forEach(b=>b.onclick=()=>{ const q = hq; if (q) qty.value = fmtQty({...q, n:q.n*+b.dataset.frac}); el.querySelectorAll('[data-frac]').forEach(x=>x.classList.toggle('on', x===b)); });
       el.querySelectorAll('[data-plus]').forEach(b=>b.onclick=()=>{ exp.value = addDays(+b.dataset.plus, exp.value && daysLeft({exp:exp.value})>=0 ? exp.value : iso(today())); });
       el.querySelector('[data-reset]').onclick=()=>{ exp.value = expFor(el.querySelector('#eName').value, el.querySelector('#eLoc').value); };
@@ -772,6 +801,10 @@ function sheetEdit(id){
         const oldQ = parseQty(it.qty), newQ = parseQty(qty.value.trim());
         it.name = cap(el.querySelector('#eName').value.trim()) || it.name; it.qty = qty.value.trim();
         if (oldQ && newQ && oldQ.d===newQ.d && newQ.n < oldQ.n) logPartial(it, {...oldQ, n:oldQ.n-newQ.n});
+        const nk = it.left ? '' : el.querySelector('#eKcal').value, np = it.left ? '' : el.querySelector('#eProt').value;
+        if (it.left){} else if (nk !== '' || np !== ''){ const old = it.nut || {}; it.nut = cleanNut({...old, k:nk===''?null:nk, p:np===''?null:np}) || undefined; } else delete it.nut;
+        if (lbl){ if (lbl.lab) it.lab = lbl.lab; if (lbl.pg) it.pg = lbl.pg; if (lbl.nut) it.nut = cleanNut({...lbl.nut, k:nk===''?lbl.nut.k:nk, p:np===''?lbl.nut.p:np}); }
+        if (!it.nut) delete it.nut;
         it.loc = el.querySelector('#eLoc').value; if (exp.value) it.exp = exp.value; if (!it.left) it.cat = classify(it.name).cat || it.cat;
         if (daysLeft(it)>=0) it.listed=false;
         sweep(); save(); closeSheet(); render(); };
@@ -1525,7 +1558,7 @@ function itemGone(id, how, toList){
   if (how==='used'){
     if (it.left){ const r = it.rid && recipeById(it.rid), q = parseQty(it.qty), n = q && q.d==='n' ? q.n : 1;
       if (r) diaryMeal(r, n, it.name); else diaryAdd({k:'meal', n:it.name, sv:n, ate:true, ings:[]}); }
-    else diaryAdd({k:'used', n:it.name, amt:it.qty||'', ate:false});
+    else diaryAdd({k:'used', n:it.name, amt:it.qty||'', ate:false, ...itemNutFields(it)});
   }
   const listed = toList && !it.left && !it.listed && addToList(it.name, how==='bin' ? 'Binned' : 'Used up');
   save(); closeSheet(); render();
@@ -1716,19 +1749,23 @@ async function onCode(code){
   const box = $('#scanBox'); if (box){ box.classList.add('hit'); setTimeout(()=>box.classList.remove('hit'), 350); }
   try { if (navigator.vibrate) navigator.vibrate(40); } catch(e){}
   const p = await lookupProduct(code);
-  row.loading = false; if (p){ row.name = p.name; row.qty = p.qty; } else row.unknown = true;
+  row.loading = false; if (p){ row.name = p.name; row.qty = p.qty; row.nut = p.nut; row.lab = p.lab; row.pg = p.pg; } else row.unknown = true;
   drawScan();
 }
 function drawScan(){
   if (!scan) return; const l = $('#scanList'), done = $('#scanDone'); if (!l) return;
-  l.innerHTML = scan.items.length ? `<div class="card list">${scan.items.map((r,i)=>`<div class="li"><div class="rmain"><div class="rname">${r.loading ? 'Looking up…' : r.unknown ? 'Not in the database' : esc(r.name)}${r.qty?`<span class="qty">${esc(r.qty)}</span>`:''}${r.count>1?`<span class="qty">×${r.count}</span>`:''}</div><div class="rsub">${r.unknown ? 'You can name it on the next screen' : esc(r.code)}</div></div><button class="x" data-scan="rm" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>` : '';
+  l.innerHTML = scan.items.length ? `<div class="card list">${scan.items.map((r,i)=>`<div class="li"><div class="rmain"><div class="rname">${r.loading ? 'Looking up…' : r.unknown ? 'Not in the database' : esc(r.name)}${r.nut && r.nut.p != null ? `<span class="qty">${r.nut.p}g protein/100g</span>` : ''}${r.qty?`<span class="qty">${esc(r.qty)}</span>`:''}${r.count>1?`<span class="qty">×${r.count}</span>`:''}</div><div class="rsub">${r.unknown ? 'You can name it on the next screen' : esc(r.code)}</div></div><button class="x" data-scan="rm" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>` : '';
   const n = scan.items.length; done.disabled = !n || scan.items.some(r=>r.loading); done.textContent = `Next (${n})`;
 }
 async function lookupProduct(code){
   try {
-    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,product_name_en,generic_name_en,generic_name,brands,quantity`);
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,product_name_en,generic_name_en,generic_name,brands,quantity,nutriments,serving_quantity`);
     if (!r.ok) return null; const j = await r.json(); if (j.status !== 1 || !j.product) return null;
-    const name = friendlyName(j.product); return name ? {name, qty:normQty(j.product.quantity)} : null;
+    const P = j.product, name = friendlyName(P); if (!name) return null; const n = P.nutriments || {};
+    const nut = cleanNut({k:n['energy-kcal_100g'] != null ? n['energy-kcal_100g'] : (n.energy_100g != null ? n.energy_100g/4.184 : null), p:n.proteins_100g, c:n.carbohydrates_100g, f:n.fat_100g});
+    const brand = String(P.brands||'').split(',')[0].trim(), pn = String(P.product_name_en || P.product_name || '').trim();
+    const lab = (pn && brand && !pn.toLowerCase().includes(brand.toLowerCase()) ? brand + ' ' + pn : pn || brand).replace(/\b(\w+)\s+\1\b/ig, '$1').slice(0, 60);
+    return {name, qty:normQty(P.quantity), ...(nut ? {nut} : {}), ...(lab && lab.toLowerCase()!==name.toLowerCase() ? {lab} : {}), ...(+P.serving_quantity > 0 ? {pg:+P.serving_quantity} : {})};
   } catch(e){ return null; }
 }
 function friendlyName(p){
@@ -1752,7 +1789,7 @@ document.addEventListener('click', ev=>{
   if (a==='close'){ closeScan(); afterOverlay(); }
   else if (a==='rm'){ scan.items.splice(+b.dataset.i, 1); drawScan(); }
   else if (a==='done'){
-    const s = closeScan(); const toks = s.items.filter(r=>!r.loading).reverse().map(r=>({name:r.name || 'Item ' + r.code, qty:(r.count>1 ? r.count + ' x ' : '') + (r.qty||'')}));
+    const s = closeScan(); const toks = s.items.filter(r=>!r.loading).reverse().map(r=>({name:r.name || 'Item ' + r.code, qty:(r.count>1 ? r.count + ' x ' : '') + (r.qty||''), extra:{...(r.nut?{nut:r.nut}:{}), ...(r.lab?{lab:r.lab}:{}), ...(r.pg?{pg:r.pg}:{})}}));
     if (toks.length) sheetPreview(toks, toks.map(t=>t.name).join(', '));
   }
 });
@@ -1916,7 +1953,7 @@ function getDiary(){ try { const d = JSON.parse(localStorage.getItem(DIARY_LS)||
 function setDiary(d){ const cut = addDays(-180); d.entries = d.entries.filter(e=>e.d >= cut); try { localStorage.setItem(DIARY_LS, JSON.stringify(d)); } catch(e){} mirrorNotify(); }
 const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); };
 function mealFor(t){ const h = +String(t).slice(0,2); return h < 11 ? 'Breakfast' : h < 15 ? 'Lunch' : h < 17 ? 'Snack' : 'Dinner'; }
-function diaryAdd(e){ const d = getDiary(), t = nowHM(); const en = {id:uid(), d:iso(today()), t, m:ui.doneAfter ? SLOT[ui.doneAfter] : mealFor(t), ...e}; d.entries.push(en); setDiary(d); return en; }
+function diaryAdd(e){ const d = getDiary(), t = nowHM(); const en = applyNut({id:uid(), d:iso(today()), t, m:ui.doneAfter ? SLOT[ui.doneAfter] : mealFor(t), ...e}); d.entries.push(en); setDiary(d); return en; }
 // A portion of a recipe: its ingredients scaled to what you ate.
 function portionOf(r, servings){ const f = servings / servesOf(r); return {ings:r.i.map(x=>scaleLabel(x[0], f)), kcal:Math.round(kcalOf(r)*servings), p:Math.round((r.p||0)*servings)}; }
 function diaryMeal(r, servings, name){
@@ -1933,7 +1970,8 @@ function entryText(e){
     const of = e.of ? ` (the recipe serves ${e.of})` : '';
     return `${e.n}, home-made, ${s}${of}. My portion: ${(e.ings||[]).join(', ')}.`;
   }
-  return e.amt ? `${e.amt} ${e.n}` : `${e.n} (amount not recorded)`;
+  const nm = e.lab ? `${e.n} (${e.lab})` : e.n, lb = e.nut ? ` – label per 100g/ml: ${nutLine(e.nut)}` : '';
+  return (e.amt ? `${e.amt} ${nm}` : `${nm} (amount not recorded)`) + lb;
 }
 function diaryPrompt(day){
   const es = getDiary().entries.filter(e=>e.d===day && e.ate).sort((a,b)=>a.t.localeCompare(b.t));
@@ -1963,7 +2001,7 @@ function openDiary(day, keepScroll){
       : `<p class="note">Nothing logged as eaten ${day===today0?'yet':'this day'}. Recipes you cook land here, with your portion. Anything you mark as used shows below for you to tick.</p>`}
     ${used.length ? `<div class="catlabel">Also used</div><p class="note" style="margin-top:0">Food you marked as used up or partly used. Tap “I ate it” for anything you ate yourself, then check the amount.</p><div class="card list">${used.map(urow).join('')}</div>` : ''}
     <label class="f">Add something else you ate</label>
-    <div class="inrow"><input type="text" id="dxName" placeholder="e.g. Tesco meal deal: chicken wrap, crisps"><select id="dxMeal" style="width:auto">${MEALS.map(m=>`<option ${m===mealFor(nowHM())?'selected':''}>${m}</option>`).join('')}</select></div>
+    <div class="inrow"><input type="text" id="dxName" list="dxItems" placeholder="e.g. Tesco meal deal: chicken wrap, crisps"><datalist id="dxItems">${state.items.filter(it=>it.nut).map(it=>`<option value="${esc(it.name)}">`).join('')}</datalist><select id="dxMeal" style="width:auto">${MEALS.map(m=>`<option ${m===mealFor(nowHM())?'selected':''}>${m}</option>`).join('')}</select></div>
     <div class="actions" style="margin-top:6px"><button class="btn ghost" id="dxAdd">Add</button></div>
     <h3 style="margin:22px 0 6px">Send to Google Health</h3>
     <p class="note" style="margin-top:0">Copy this, open the Google Health app, tap <b>Ask Coach</b> and paste it. The coach logs each meal and works out the calories.</p>
@@ -1979,11 +2017,13 @@ function openDiary(day, keepScroll){
       el.querySelectorAll('[data-dd]').forEach(b=>b.onclick=()=>openDiary(addDays(+b.dataset.dd, day)));
       el.querySelectorAll('[data-dm]').forEach(b=>b.onclick=()=>{ edit(b.dataset.dm, e=>{ e.m = MEALS[(MEALS.indexOf(e.m)+1) % MEALS.length]; }); again(); });
       el.querySelectorAll('[data-dsv]').forEach(b=>b.onclick=()=>{ edit(b.dataset.dsv, e=>rescaleMeal(e, (e.sv||1) + +b.dataset.v)); again(); });
-      el.querySelectorAll('[data-da]').forEach(i=>i.onchange=()=>{ edit(i.dataset.da, e=>{ e.amt = i.value.trim(); }); again(); });
-      el.querySelectorAll('[data-date]').forEach(b=>b.onclick=()=>{ let id = b.dataset.date; edit(id, e=>{ e.ate = true; if (!e.part){ e.was = e.amt; e.amt = ''; } }); again(); setTimeout(()=>{ const i = $(`[data-da="${id}"]`); if (i && !i.value){ i.placeholder = 'how much?'; i.focus(); } }, 50); });
+      el.querySelectorAll('[data-da]').forEach(i=>i.onchange=()=>{ edit(i.dataset.da, e=>{ e.amt = i.value.trim(); applyNut(e); }); again(); });
+      el.querySelectorAll('[data-date]').forEach(b=>b.onclick=()=>{ let id = b.dataset.date; edit(id, e=>{ e.ate = true; if (!e.part){ e.was = e.amt; e.amt = ''; } applyNut(e); }); again(); setTimeout(()=>{ const i = $(`[data-da="${id}"]`); if (i && !i.value){ i.placeholder = 'how much?'; i.focus(); } }, 50); });
       el.querySelectorAll('[data-ddel]').forEach(b=>b.onclick=()=>{ const d = getDiary(); d.entries = d.entries.filter(x=>x.id!==b.dataset.ddel); setDiary(d); again(); });
       el.querySelector('#dxAdd').onclick=()=>{ const n = el.querySelector('#dxName').value.trim(); if (!n) return;
-        const d = getDiary(); d.entries.push({id:uid(), d:day, t:day===today0 ? nowHM() : '12:00', m:el.querySelector('#dxMeal').value, k:'extra', n:cap(n), amt:'', ate:true}); setDiary(d); again(); };
+        const d = getDiary(); const src = state.items.find(it=>it.nut && (it.name.toLowerCase()===n.toLowerCase() || (it.lab||'').toLowerCase()===n.toLowerCase()));
+        const en = {id:uid(), d:day, t:day===today0 ? nowHM() : '12:00', m:el.querySelector('#dxMeal').value, k:'extra', n:cap(n), amt:'', ate:true, ...(src ? itemNutFields(src) : {})};
+        d.entries.push(en); setDiary(d); again(); setTimeout(()=>{ const i = $(`[data-da="${en.id}"]`); if (i){ i.placeholder = 'How much? e.g. 30g'; i.focus(); } }, 50); };
       const st = el.querySelector('#dStatus');
       el.querySelector('#dCopy').onclick=async()=>{ try { await navigator.clipboard.writeText(prompt); st.textContent = '✓ Copied. Now paste it into Ask Coach in Google Health.'; } catch(e){ st.textContent = 'Couldn’t copy here. Open “See the message”, then press and hold to copy it.'; const dv = el.querySelector('.pview'); if (dv) dv.open = true; } };
       const sh = el.querySelector('#dShare'); if (sh) sh.onclick=async()=>{ try { await navigator.share({text:prompt}); } catch(e){} };
@@ -1997,7 +2037,7 @@ function openDiary(day, keepScroll){
 function logPartial(it, q){
   if (it.left){ const r = it.rid && recipeById(it.rid), n = q.d==='n' ? q.n : 1;
     if (r) diaryMeal(r, n, it.name); else diaryAdd({k:'meal', n:it.name, sv:n, ate:true, ings:[]}); }
-  else diaryAdd({k:'used', n:it.name, amt:fmtQty(q), ate:false, part:true});
+  else diaryAdd({k:'used', n:it.name, amt:fmtQty(q), ate:false, part:true, ...itemNutFields(it)});
 }
 
 /* ---------- more breakfasts and lunches ---------- */
