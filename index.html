@@ -917,7 +917,7 @@ function sheetSettings(focus){
     <h3 style="margin:26px 0 6px" id="aiSec">AI (Gemini)</h3>
     <p class="note" style="margin-top:0">Used for importing recipes, scanning receipts and recipe ideas. Get a free key at aistudio.google.com → Get API key. It stays on this phone.</p>
     <label class="f">Gemini API key</label><input type="password" class="key" id="gKey" value="${esc(getGem().key||'')}" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <label class="f">Model</label><select id="gModel">${[['gemini-3.5-flash','Gemini 3.5 Flash (free, recommended)'],['gemini-3.1-flash-lite','Gemini 3.1 Flash-Lite (free, fastest)'],['gemini-3.1-pro-preview','Gemini 3.1 Pro (smartest, needs billing on)']].map(([v,l])=>`<option value="${v}" ${(getGem().model||'gemini-3.5-flash')===v?'selected':''}>${l}</option>`).join('')}</select>
+    <label class="f">Model</label><select id="gModel">${[['gemini-3.5-flash','Gemini 3.5 Flash (free, recommended)'],['gemini-3.1-flash-lite','Gemini 3.1 Flash-Lite (free, fastest)'],['gemini-3.8-flash','Gemini 3.8 Flash (newer, small free allowance)'],['gemini-3.1-pro-preview','Gemini 3.1 Pro (needs billing on)']].map(([v,l])=>`<option value="${v}" ${(getGem().model||'gemini-3.5-flash')===v?'selected':''}>${l}</option>`).join('')}</select>
     <div class="actions"><button class="btn ghost" id="gTest">Save & test key</button></div><p class="note" id="gStatus"></p>
 
     <h3 style="margin:26px 0 6px" id="srvSec">Your Larder server</h3>
@@ -1019,7 +1019,7 @@ function loadSample(){
 
 /* ---------- AI: Gemini (own key) or Claude ---------- */
 async function gemini(prompt, useUrl, image, onText, schema, onlyModel){
-  const g = getGem(); const models = onlyModel ? [onlyModel] : [g.model||'gemini-3.5-flash', 'gemini-3.1-flash-lite'].filter((v,i,a)=>a.indexOf(v)===i);
+  const g = getGem(); const models = onlyModel ? [onlyModel] : [g.model||'gemini-3.5-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'].filter((v,i,a)=>a.indexOf(v)===i);
   let last = {status:0, message:'No response'};
   for (const m of models){
     const parts = image ? [{inline_data:{mime_type:'image/jpeg', data:image}}, {text:prompt}] : [{text:prompt}];
