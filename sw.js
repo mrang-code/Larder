@@ -1,5 +1,5 @@
 // Larder service worker: instant opening, offline support and expiry reminders.
-const CACHE = 'larder-v7';
+const CACHE = 'larder-v8';
 const FILES = ['./', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
@@ -20,46 +20,55 @@ self.addEventListener('fetch', e => {
   })());
 });
 
-// ---- expiry reminders ----
-// The reminder server sends an empty ping. What needs using up is worked out here, on the phone,
-// from a copy of the kitchen the app keeps in IndexedDB. No food names ever leave the phone.
-function readKitchen() {
+// ---- reminders ----
+// The server sends an empty ping. What to say is worked out here, on the phone, from a copy of the
+// kitchen the app keeps in IndexedDB. No food names ever leave the phone.
+function idb(mode, fn) {
   return new Promise(resolve => {
     try {
       const rq = indexedDB.open('larder', 1);
       rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
       rq.onerror = () => resolve(null);
       rq.onsuccess = () => {
-        try {
-          const db = rq.result, g = db.transaction('kv').objectStore('kv').get('notify');
-          g.onsuccess = () => { resolve(g.result || null); db.close(); };
-          g.onerror = () => { resolve(null); db.close(); };
+        try { const db = rq.result, tx = db.transaction('kv', mode), r = fn(tx.objectStore('kv'));
+          tx.oncomplete = () => { resolve(r && 'result' in r ? r.result : null); db.close(); };
+          tx.onerror = () => { resolve(null); db.close(); };
         } catch (err) { resolve(null); }
       };
     } catch (err) { resolve(null); }
   });
 }
+const kvGet = k => idb('readonly', st => st.get(k));
+const kvPut = (k, v) => idb('readwrite', st => st.put(v, k));
+const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 function whenText(d) { return d < 0 ? 'past its date' : d === 0 ? 'today' : d === 1 ? 'tomorrow' : d + ' days'; }
-async function showDue() {
-  const k = await readKitchen();
-  let title = 'Larder', body = 'Open Larder to see what needs using up.', count = 0;
-  if (k && Array.isArray(k.items)) {
-    const t = new Date(); t.setHours(0, 0, 0, 0);
-    const due = k.items.map(it => { const p = String(it.exp).split('-').map(Number); return {n: it.n, d: Math.round((new Date(p[0], p[1] - 1, p[2]) - t) / 864e5)}; })
-      .filter(x => x.d <= (k.warn || 2) && x.d >= -1).sort((a, b) => a.d - b.d);
-    count = due.length;
-    if (due.length === 1) { title = 'Use up your ' + due[0].n.toLowerCase(); body = due[0].d < 0 ? 'It is past its date.' : 'Best used ' + (due[0].d > 1 ? 'within ' + due[0].d + ' days' : whenText(due[0].d)) + '.'; }
-    else if (due.length) { title = due.length + ' things to use up'; body = due.slice(0, 6).map(x => x.n + ' (' + whenText(x.d) + ')').join(', ') + (due.length > 6 ? ' and ' + (due.length - 6) + ' more' : ''); }
-    else { title = 'Kitchen check'; body = 'Nothing needs using up right now.'; }
+async function onPing() {
+  const k = (await kvGet('notify')) || {}, shown = (await kvGet('shown')) || {};
+  const now = new Date(), today = ymd(now), t = new Date(now); t.setHours(0, 0, 0, 0);
+  const due = (Array.isArray(k.items) ? k.items : []).map(it => { const p = String(it.exp).split('-').map(Number); return {n: it.n, d: Math.round((new Date(p[0], p[1] - 1, p[2]) - t) / 864e5)}; })
+    .filter(x => x.d <= (k.warn || 2) && x.d >= -1).sort((a, b) => a.d - b.d);
+  let title, body;
+  if (due.length === 1) { title = 'Use up your ' + due[0].n.toLowerCase(); body = due[0].d < 0 ? 'It is past its date.' : 'Best used ' + (due[0].d > 1 ? 'within ' + due[0].d + ' days' : whenText(due[0].d)) + '.'; }
+  else if (due.length) { title = due.length + ' things to use up'; body = due.slice(0, 6).map(x => x.n + ' (' + whenText(x.d) + ')').join(', ') + (due.length > 6 ? ' and ' + (due.length - 6) + ' more' : ''); }
+  else { title = 'Kitchen check'; body = 'Nothing needs using up right now.'; }
+  const out = [];
+  if (k.diary >= 0 && now.getHours() >= k.diary && shown.diary !== today) {
+    const n = k.dcount || 0, u = k.ucount || 0;
+    out.push({tag: 'diary', title: 'Your food diary for today', body: (n ? n + ' thing' + (n > 1 ? 's' : '') + ' logged' + (u ? ', ' + u + ' more to check' : '') + '. ' : u ? u + ' thing' + (u > 1 ? 's' : '') + ' to check. ' : '') + 'Tap to copy it for Google Health.'});
+    shown.diary = today;
   }
-  try { if (self.navigator.setAppBadge) { if (count) await self.navigator.setAppBadge(count); else await self.navigator.clearAppBadge(); } } catch (err) {}
-  return self.registration.showNotification(title, {body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'larder-due'});
+  if (due.length && shown.exp !== today) { out.push({tag: 'due', title, body}); shown.exp = today; }
+  if (!out.length) out.push({tag: 'due', title, body});   // e.g. "Send a test"
+  await kvPut('shown', shown);
+  try { if (self.navigator.setAppBadge) { if (due.length) await self.navigator.setAppBadge(due.length); else await self.navigator.clearAppBadge(); } } catch (err) {}
+  await Promise.all(out.map(o => self.registration.showNotification(o.title, {body: o.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'larder-' + o.tag, data: {open: o.tag === 'diary' ? 'diary' : ''}})));
 }
-self.addEventListener('push', e => { e.waitUntil(showDue()); });
+self.addEventListener('push', e => { e.waitUntil(onPing()); });
 self.addEventListener('notificationclick', e => {
   e.notification.close();
+  const open = e.notification.data && e.notification.data.open;
   e.waitUntil(self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(list => {
-    for (const c of list) { if ('focus' in c) return c.focus(); }
-    return self.clients.openWindow('./');
+    for (const c of list) { if ('focus' in c) { if (open) c.postMessage({open}); return c.focus(); } }
+    return self.clients.openWindow(open ? './#' + open : './');
   }));
 });

@@ -3,6 +3,7 @@
 // 1. Expiry reminders: once an hour it checks who is due a reminder today and sends their phone an
 //    empty "ping". The Larder app on the phone then works out what needs using up and shows the
 //    notification. For reminders it only stores a push address and a list of dates — no food names.
+//    It can also send an end-of-day nudge to copy your food diary into Google Health.
 // 2. Shared kitchen: keeps one copy of a household's kitchen, list, plan and cookbook, so several
 //    phones stay in sync. Each household is protected by a secret in its invite code.
 //
@@ -127,11 +128,13 @@ async function runDue(env) {
       const s = await env.DB.get(name, 'json');
       if (!s || !s.endpoint) continue;
       const now = localNow(s.tz);
-      if (now.hour < s.hour || s.last === now.date || !(s.dates || []).includes(now.date)) continue;
+      const expDue = now.hour >= s.hour && s.last !== now.date && (s.dates || []).includes(now.date);
+      const diaryDue = s.diary >= 0 && now.hour >= s.diary && s.lastD !== now.date;
+      if (!expDue && !diaryDue) continue;
       let status = 0;
       try { status = await ping(env, s.endpoint); } catch (e) {}
       if (status === 404 || status === 410) { await env.DB.delete(name); continue; }   // phone unsubscribed
-      if (status >= 200 && status < 300) { s.last = now.date; await env.DB.put(name, JSON.stringify(s)); sent++; }
+      if (status >= 200 && status < 300) { if (expDue) s.last = now.date; if (diaryDue) s.lastD = now.date; await env.DB.put(name, JSON.stringify(s)); sent++; }
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
@@ -144,7 +147,7 @@ export default {
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors(origin)});
     if (req.method === 'GET' && url.pathname === '/') {
-      return new Response('Larder server is running (v2).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB'), {headers: {'Content-Type': 'text/plain'}});
+      return new Response('Larder server is running (v3).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB'), {headers: {'Content-Type': 'text/plain'}});
     }
     if (!env.DB) return json({error: 'Storage is not connected. Add a KV binding named DB.'}, 500, origin);
     if (req.method === 'GET' && url.pathname === '/key') return json({key: (await vapid(env)).pub}, 200, origin);
@@ -162,7 +165,8 @@ export default {
       const dates = (Array.isArray(b.dates) ? b.dates : []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(0, 150);
       const h = Number(b.hour); const hour = Number.isFinite(h) ? Math.min(23, Math.max(0, Math.round(h))) : 17;
       const old = await env.DB.get(k, 'json');
-      await env.DB.put(k, JSON.stringify({endpoint, dates, hour, tz: String(b.tz || 'Europe/London').slice(0, 64), last: old ? old.last || '' : ''}));
+      const dh = Number(b.diary); const diary = Number.isFinite(dh) && dh >= 0 ? Math.min(23, Math.round(dh)) : -1;
+      await env.DB.put(k, JSON.stringify({endpoint, dates, hour, diary, tz: String(b.tz || 'Europe/London').slice(0, 64), last: old ? old.last || '' : '', lastD: old ? old.lastD || '' : ''}));
       return json({ok: true, days: dates.length}, 200, origin);
     }
     if (url.pathname === '/unsubscribe') { await env.DB.delete(k); return json({ok: true}, 200, origin); }
