@@ -557,9 +557,21 @@ function foodKeysIn(s){
   const ks = _fk.filter(k=>n.includes(' '+k+' '));
   v = ks.filter(k=>!ks.some(o=>o!==k && o.endsWith(' '+k))); if (_fkc.size > 5000) _fkc.clear(); _fkc.set(n, v); return v;
 }
+// The same word in a different product: ketchup isn't a tomato, chicken stock isn't chicken, tinned tomatoes aren't fresh ones.
+const MADE_INTO = ['ketchup','sauce','puree','paste','passata','soup','juice','powder','powdered','sundried','pickled','jam','crisp','stock','cube','oil','vinegar','gravy','seasoning','mayo','mayonnaise','dip','salsa','relish','chutney','smoothie','cake','pie','pizza','sandwich','flavour','flavoured','flavor','flavored','bread','noodle','bar','cereal','drink','tea','spread','syrup','extract','essence','flake','granule','fried','ready','meal','kit','mix','butter','milk','cream','yogurt','yoghurt','icecream'];
+const FORMS = [[/\b(tinned|canned|chopped|peeled|plum|dried|sun)\b/, /tomatoe?$/], [/\bsmoked\b/, /^(salmon|fish)$/], [/\bdried\b/, /^(mushroom|chilli|apricot|mango|fruit|berr\w*)$/], [/\b(sweet)\b/, /^potato$/], [/\bspring\b/, /^onion$/], [/\b(coconut|peanut|almond|nut|cashew|ice)\b/, /^(milk|butter|cream)$/], [/\bcheese\b/, /^cream$/], [/\b(baked|kidney|black|green|butter|broad|runner|coffee|jelly)\b/, /^$/]];
+function wrongForm(n, a){
+  const aw = a.split(' '), nw = n.split(' ');
+  if (!aw.every(w=>nw.some(x=>x.includes(w)))) return false;      // only judge when the word is actually in the name
+  const at = nw.findIndex(x=>x.includes(aw[aw.length-1]));
+  if (nw.some((w,i)=>MADE_INTO.includes(w) && !aw.includes(w) && i > at)) return true;   // "tomato ketchup", "chicken stock", "garlic bread"
+  return FORMS.some(([it, al])=>al.test(a) && it.test(n) && !it.test(a));
+}
 function nameMatches0(itemName, alt){
   const n = normName(itemName), a = normName(alt); if (!a) return false;
+  if (wrongForm(n, a)) return false;
   if (n.includes(a)) return true;
+  if (/^(tinned|canned|chopped) tomato/.test(a) && /tomato/.test(n) && /\b(tinned|canned|chopped|peeled|plum)\b/.test(n)) return true;
   // "chicken thighs" in a recipe also accepts the "Chicken breast" you have, but "coconut milk" doesn't accept "Milk".
   const ak = foodKeysIn(a); if (!ak.length) return false;
   const nk = foodKeysIn(n);
