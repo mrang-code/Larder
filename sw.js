@@ -1,5 +1,5 @@
 // Larder service worker: instant opening, offline support and expiry reminders.
-const CACHE = 'larder-v8';
+const CACHE = 'larder-v9';
 const FILES = ['./', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
