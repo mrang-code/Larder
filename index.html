@@ -382,7 +382,32 @@ function addSpice(name, level){
   const n = cap(name.trim()); const ex = state.spices.find(s=>s.name.toLowerCase()===n.toLowerCase());
   if (ex){ ex.level = level; ex.listed = false; } else state.spices.push({id:uid(), name:n, level, listed:false});
 }
-function findSpice(keys){ const al = keys.split('|'); return state.spices.find(s=>s.level>0 && al.some(a=>s.name.toLowerCase().includes(a))); }
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const sing = w => w.length>3 && /[^s]s$/.test(w) ? w.replace(/(oe|ie)s$/, '$1').replace(/([^aeiou])ies$/, '$1y').replace(/(ch|sh|x|ss|o)es$/, '$1').replace(/s$/, '') : w;
+const normName = s => String(s||'').toLowerCase().replace(/[^a-z' ]+/g,' ').split(' ').filter(Boolean).map(sing).join(' ');
+const hasWords = (hay, needle) => !!needle && new RegExp('(^| )' + reEsc(needle) + '( |$)').test(hay);
+// A recipe spice ("smoked paprika", "caster sugar") against a jar in the rack ("Paprika", "Sugar"), either way round.
+function spiceMatch(s, alt){ const n = normName(s.name), a = normName(alt); return !!a && (n===a || hasWords(n, a) || hasWords(a, n)); }
+function findSpice(keys){ const al = keys.split('|').map(a=>a.trim()).filter(Boolean); return state.spices.find(s=>s.level>0 && al.some(a=>spiceMatch(s, a))); }
+// A recipe ingredient that you keep in the spice rack instead (sugar, honey, flour, stock cubes…).
+function rackFor(keys){
+  const al = keys.split('|').map(a=>normName(a)).filter(Boolean);
+  return state.spices.find(s=>{ if (!(s.level>0)) return false; const n = normName(s.name), head = n.split(' ').pop();
+    return al.some(a=>a===n || hasWords(a, n) || (a.split(' ').length===1 && a===head)); });
+}
+// Every shelf-life word inside a phrase, minus ones that are only the tail of a longer word ("milk" in "coconut milk").
+function foodKeysIn(s){
+  const n = ' '+normName(s)+' '; const ks = Object.keys(FOOD).map(k=>normName(k)).filter((k,i,a)=>a.indexOf(k)===i && n.includes(' '+k+' '));
+  return ks.filter(k=>!ks.some(o=>o!==k && o.endsWith(' '+k)));
+}
+function nameMatches(itemName, alt){
+  const n = normName(itemName), a = normName(alt); if (!a) return false;
+  if (n.includes(a)) return true;
+  // "chicken thighs" in a recipe also accepts the "Chicken breast" you have, but "coconut milk" doesn't accept "Milk".
+  const ak = foodKeysIn(a); if (!ak.length) return false;
+  const nk = foodKeysIn(n);
+  return ak.some(k=>{ const parent = k.split(' ')[0]; return nk.includes(k) || (k.includes(' ') && FOOD[parent] && hasWords(n, parent) && ['Meat','Fish'].includes(FOOD[parent].cat)); });
+}
 function matchIng(keys, ctx){
   ctx = ctx && typeof ctx==='object' ? ctx : {};
   const min = ctx.day||0, ex = ctx.exclude;
@@ -390,22 +415,21 @@ function matchIng(keys, ctx){
   for (const it of state.items){
     if (it.left) continue;
     const d=daysLeft(it); if (d<min) continue; if (ex && ex.has(it.id)) continue;
-    const n=it.name.toLowerCase();
-    if (al.some(a=>n.includes(a)) && d<bd){ best=it; bd=d; }
+    if (al.some(a=>nameMatches(it.name, a)) && d<bd){ best=it; bd=d; }
   }
   return best;
 }
 function evalRecipe(r, ctx){
   ctx = ctx && typeof ctx==='object' ? ctx : {};
   const day = ctx.day||0;
-  const rows = r.i.map(x=>({label:x[0], keys:x[1], opt:!!x[2], item:matchIng(x[1], ctx)}));
-  const req = rows.filter(x=>!x.opt), have = req.filter(x=>x.item);
-  const missing = req.filter(x=>!x.item);
+  const rows = r.i.map(x=>{ const item = matchIng(x[1], ctx); return {label:x[0], keys:x[1], opt:!!x[2], item, rack: item ? null : rackFor(x[1])}; });
+  const req = rows.filter(x=>!x.opt), have = req.filter(x=>x.item||x.rack);
+  const missing = req.filter(x=>!x.item && !x.rack);
   const seen = new Set(); const urgent = [];
   rows.forEach(x=>{ if (x.item && daysLeft(x.item)<=day+state.prefs.warn && !seen.has(x.item.id)){ seen.add(x.item.id); urgent.push(x.item); } });
   const sp = (r.s||[]).map(k=>({keys:k, sp:findSpice(k)}));
   const cov = req.length ? have.length/req.length : 0;
-  const score = cov + urgent.length*0.25 + rows.filter(x=>x.opt&&x.item).length*0.03 + sp.filter(x=>x.sp).length*0.02;
+  const score = cov + urgent.length*0.25 + rows.filter(x=>x.opt&&(x.item||x.rack)).length*0.03 + sp.filter(x=>x.sp).length*0.02;
   return {r, rows, missing, urgent, sp, cov, have:have.length, req:req.length, score};
 }
 function tagsOf(r){ const t=new Set(r.tags||[]); if (t.has('vegan')){ t.add('veg'); t.add('df'); } return t; }
@@ -696,7 +720,7 @@ function sheetRecipe(id){
     ${e.urgent.length?`<div class="uses">Uses up ${e.urgent.map(it=>esc(it.name.toLowerCase())).join(', ')} before ${e.urgent.length>1?'they go':'it goes'} off</div>`:''}
     ${lack.length?`<div class="uses" style="background:var(--red-soft);color:var(--red)">Needs ${lack.map(applName).join(', ').toLowerCase()}, which isn’t ticked in your appliances</div>`:''}
     <h3 style="margin:16px 0 4px">Ingredients</h3>
-    <div>${e.rows.map(x=>`<div class="ing"><span class="s ${x.item?'y':'n'}">${x.item?'✓':'–'}</span><span class="t">${esc(x.label)}${x.opt?' <small>(optional)</small>':''}${x.item?`<br><small>${esc(x.item.name)} · ${dueShort(daysLeft(x.item)).toLowerCase()}${x.item.loc==='freezer'?' · in the freezer, defrost first':''}</small>`:''}</span>${!x.item?`<button class="btn sm" data-addone="${esc(x.label)}">+ List</button>`:''}</div>`).join('')}</div>
+    <div>${e.rows.map(x=>`<div class="ing"><span class="s ${x.item||x.rack?'y':'n'}">${x.item||x.rack?'✓':'–'}</span><span class="t">${esc(x.label)}${x.opt?' <small>(optional)</small>':''}${x.item?`<br><small>${esc(x.item.name)} · ${dueShort(daysLeft(x.item)).toLowerCase()}${x.item.loc==='freezer'?' · in the freezer, defrost first':''}</small>`:x.rack?`<br><small>${esc(x.rack.name)} · in your spice rack</small>`:''}</span>${!x.item&&!x.rack?`<button class="btn sm" data-addone="${esc(x.label)}">+ List</button>`:''}</div>`).join('')}</div>
     ${e.sp.length?`<h3 style="margin:16px 0 4px">Spices</h3><div>${e.sp.map(x=>`<div class="ing"><span class="s ${x.sp?'y':'n'}">${x.sp?'✓':'–'}</span><span class="t">${esc(cap(x.keys.split('|')[0]))}${x.sp?` <small>· ${lvlLabel(x.sp.level).toLowerCase()}</small>`:''}</span>${!x.sp?`<button class="btn sm" data-addone="${esc(cap(x.keys.split('|')[0]))}">+ List</button>`:''}</div>`).join('')}</div>`:''}
     <p class="note">Salt, pepper, oil and water assumed.</p>
     <h3 style="margin:16px 0 4px">Method</h3><ol class="steps">${(r.st||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol>
@@ -716,7 +740,7 @@ function sheetRecipe(id){
 }
 function sheetCook(r, e){
   const used = []; const seen=new Set(); e.rows.forEach(x=>{ if(x.item && !seen.has(x.item.id)){ seen.add(x.item.id); used.push(x.item); } });
-  const sps = e.sp.filter(x=>x.sp).map(x=>x.sp);
+  const sps = [...new Set(e.sp.filter(x=>x.sp).map(x=>x.sp).concat(e.rows.filter(x=>x.rack).map(x=>x.rack)))];
   openSheet(`${head('Nice one 👨‍🍳')}<p class="note" style="margin-top:0">Tick anything you finished so your kitchen stays accurate.</p>
     <div class="card" style="padding:0 14px">${used.length?used.map(it=>`<label class="check" style="border-top:1px solid var(--line)"><input type="checkbox" data-u="${it.id}" ${daysLeft(it)<=state.prefs.warn?'checked':''}> ${esc(it.name)}</label>`).join(''):'<p class="note">Nothing from your kitchen matched.</p>'}</div>
     <label class="check"><input type="checkbox" id="cList" checked> Add finished items to the shopping list</label>
@@ -1049,13 +1073,17 @@ function planMissing(){
 }
 function autoPlan(){
   const used = new Set(Object.values(state.plan).flat()); const claimed = new Set(); let n = 0;
-  const pool = allRecipes().filter(r=>!BFAST.has(r.id) && dietOk(r) && canCook(r) && goalOk(r, state.prefs.goals));
+  const mine = new Set(state.saved.map(r=>r.id));
+  // Your own recipes are always considered; built-in ones still follow your default filters.
+  const pool = allRecipes().filter(r=>!BFAST.has(r.id) && dietOk(r) && canCook(r) && (mine.has(r.id) || goalOk(r, state.prefs.goals)));
   for (let k=0; k<7; k++){
     const d = addDays(k); if ((state.plan[d]||[]).length) continue;
-    let best = null, bs = 0;
+    let best = null, bs = -1;
     for (const r of pool){ if (used.has(r.id)) continue;
-      const e = evalRecipe(r, {day:k, exclude:claimed}); if (e.missing.length > 1 || e.cov < 0.6) continue;
-      const s = e.cov + e.urgent.length*0.3 - e.missing.length*0.1; if (s > bs){ bs = s; best = e; } }
+      const own = mine.has(r.id);
+      const e = evalRecipe(r, {day:k, exclude:claimed}); if (e.missing.length > (own?2:1) || e.cov < (own?0.5:0.6)) continue;
+      if (k>0 && e.missing.some(x=>matchIng(x.keys))) continue; // something you have now would be past its date by then
+      const s = e.cov + e.urgent.length*0.3 - e.missing.length*0.1 + (own ? 0.35 : 0); if (s > bs){ bs = s; best = e; } }
     if (!best) continue;
     planAdd(d, best.r); used.add(best.r.id); n++;
     best.rows.forEach(x=>{ if (x.item && daysLeft(x.item) < 21) claimed.add(x.item.id); });
@@ -1077,10 +1105,13 @@ function vPlan(){
   return h;
 }
 function sheetPlanPick(d){
-  const k = dayK(d);
-  const pool = allRecipes().filter(r=>dietOk(r) && canCook(r)).map(r=>evalRecipe(r, {day:k})).sort((a,b)=>b.score-a.score).slice(0,40);
+  const k = dayK(d), mine = new Set(state.saved.map(r=>r.id));
+  const rank = list => list.filter(r=>dietOk(r) && canCook(r)).map(r=>evalRecipe(r, {day:k})).sort((a,b)=>b.score-a.score);
+  const own = rank(state.saved), built = rank(RECIPES).slice(0,30);
+  const row = e => `<div class="row" data-pick="${e.r.id}"><div class="rmain"><div class="rname">${esc(e.r.n)}</div><div class="rsub">${e.r.t} min${e.r.p?` · ~${e.r.p}g protein`:''}${e.urgent.length?' · uses up '+e.urgent.map(it=>esc(it.name.toLowerCase())).join(', '):''}</div></div><span class="ring ${e.cov===1?'':'part'}">${e.cov===1?'Ready':e.have+'/'+e.req}</span></div>`;
   openSheet(`${head(dayLabel(d))}<p class="note" style="margin-top:0">Ranked by what you’ll still have on the day.</p>
-    <div class="card list">${pool.map(e=>`<div class="row" data-pick="${e.r.id}"><div class="rmain"><div class="rname">${esc(e.r.n)}</div><div class="rsub">${e.r.t} min${e.r.p?` · ~${e.r.p}g protein`:''}${e.urgent.length?' · uses up '+e.urgent.map(it=>esc(it.name.toLowerCase())).join(', '):''}</div></div><span class="ring ${e.cov===1?'':'part'}">${e.cov===1?'Ready':e.have+'/'+e.req}</span></div>`).join('')}</div>`, el=>{
+    ${own.length?`<div class="catlabel" style="margin-top:4px">My cookbook</div><div class="card list">${own.map(row).join('')}</div>`:''}
+    <div class="catlabel">${own.length?'Built-in recipes':'Recipes'}</div><div class="card list">${built.map(row).join('')}</div>`, el=>{
       el.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{ const r = recipeById(b.dataset.pick); if (!r) return; planAdd(d, r); save(); closeSheet(); render(); });
     });
 }
@@ -1119,7 +1150,7 @@ function renderCook(){
   const r = cook.r, n = r.st.length, i = cook.i; let body;
   if (i < 0){
     const e = evalRecipe(r), alts = myAlts(r);
-    body = `<div class="cstep-n">Get everything out</div><div>${e.rows.map(x=>`<div class="ing"><span class="s ${x.item?'y':'n'}">${x.item?'✓':'–'}</span><span class="t">${esc(x.label)}${x.opt?' <small>(optional)</small>':''}${x.item && x.item.loc==='freezer'?' <small>· defrost first</small>':''}</span></div>`).join('')}${(r.s||[]).length?`<div class="ing"><span class="s y">+</span><span class="t">${r.s.map(k=>esc(cap(k.split('|')[0]))).join(', ')}</span></div>`:''}</div>${alts.map(a=>`<div class="altn"><b>${applName(a[0])}:</b> ${esc(a[1])}</div>`).join('')}`;
+    body = `<div class="cstep-n">Get everything out</div><div>${e.rows.map(x=>`<div class="ing"><span class="s ${x.item||x.rack?'y':'n'}">${x.item||x.rack?'✓':'–'}</span><span class="t">${esc(x.label)}${x.opt?' <small>(optional)</small>':''}${x.item && x.item.loc==='freezer'?' <small>· defrost first</small>':''}</span></div>`).join('')}${(r.s||[]).length?`<div class="ing"><span class="s y">+</span><span class="t">${r.s.map(k=>esc(cap(k.split('|')[0]))).join(', ')}</span></div>`:''}</div>${alts.map(a=>`<div class="altn"><b>${applName(a[0])}:</b> ${esc(a[1])}</div>`).join('')}`;
   } else {
     const s = r.st[i], m = stepMinutes(s);
     body = `<div class="cstep-n">Step ${i+1} of ${n}</div><div class="cstep">${esc(s)}</div>${m && !cook.end?`<button class="btn ghost" data-act="cook-timer" data-m="${m}">⏱ Start ${m} min timer</button>`:''}`;
