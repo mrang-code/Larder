@@ -835,7 +835,7 @@ async function gemini(prompt, useUrl, image, onText, schema, onlyModel){
   let last = {status:0, message:'No response'};
   for (const m of models){
     const parts = image ? [{inline_data:{mime_type:'image/jpeg', data:image}}, {text:prompt}] : [{text:prompt}];
-    const body = {contents:[{role:'user', parts}], generationConfig:{thinkingConfig:{thinkingLevel:'low'}, maxOutputTokens:8192}};
+    const body = {contents:[{role:'user', parts}], generationConfig:{thinkingConfig:{includeThoughts:true}, maxOutputTokens:12000}};
     if (useUrl) body.tools = [{url_context:{}}];
     else { body.generationConfig.responseMimeType = 'application/json'; if (schema) body.generationConfig.responseSchema = schema; }
     let res = await geminiCall(m, body, onText);
@@ -862,7 +862,7 @@ async function geminiCall(m, body, onText){
     const e = await r.json().catch(()=>({})); const er = Array.isArray(e) ? e[0] : e;
     return {err:{status:r.status, message:(er && er.error && er.error.message)||r.statusText, model:m}};
   }
-  let text = '', buf = '', blocked = '';
+  let text = '', buf = '', blocked = '', thinking = false;
   try {
     const rd = r.body.getReader(), dec = new TextDecoder();
     const take = line => {
@@ -870,12 +870,12 @@ async function geminiCall(m, body, onText){
       let j; try { j = JSON.parse(line.slice(5)); } catch(e){ return; }
       if (j.promptFeedback && j.promptFeedback.blockReason) blocked = j.promptFeedback.blockReason;
       const c = j.candidates && j.candidates[0];
-      ((c && c.content && c.content.parts) || []).forEach(p=>{ if (!p.thought && p.text) text += p.text; });
+      ((c && c.content && c.content.parts) || []).forEach(p=>{ if (p.thought) thinking = true; else if (p.text) text += p.text; });
     };
     for (;;){
       const {value, done} = await rd.read(); if (done) break; bump();
       buf += dec.decode(value, {stream:true}); const lines = buf.split('\n'); buf = lines.pop(); lines.forEach(take);
-      if (onText) onText(text);
+      if (onText) onText(text, thinking);
     }
     take(buf);
   } catch(e){ clearTimeout(timer); return {err:{status:0, message: ctl.signal.aborted ? 'timeout' : 'network', model:m}}; }
@@ -934,20 +934,30 @@ const S_RECIPE = {type:'OBJECT', properties:{
   ingredients:{type:'ARRAY', items:{type:'OBJECT', properties:{label:S_STR, key:S_STR, optional:{type:'BOOLEAN'}}, required:['label','key']}},
   spices:S_LIST, steps:S_LIST,
   alt:{type:'OBJECT', properties:{airfryer:S_STR, slowcooker:S_STR, pressure:S_STR}},
-  error:S_STR}};
+  error:S_STR},
+  propertyOrdering:['error','name','time','servings','protein','tags','equipment','ingredients','spices','steps','alt','why']};
 const S_IDEAS = {type:'OBJECT', properties:{recipes:{type:'ARRAY', items:S_RECIPE}}, required:['recipes']};
 const S_SCAN = {type:'OBJECT', properties:{items:{type:'ARRAY', items:{type:'OBJECT', properties:{name:S_STR, qty:S_STR}, required:['name']}}}, required:['items']};
+// Keep AI text short and clean: one line for the description, sensible lengths elsewhere.
+function shortLine(s, max){
+  s = String(s||'').replace(/\s+/g,' ').trim(); if (!s) return '';
+  if (/\b(wait|actually|let's|let me|i will|i'll|the (user|prompt|schema))\b/i.test(s.slice(0, 400)) && s.length > 120){
+    const first = s.split(/(?<=[.!?])\s/)[0]; return first.length <= (max||140) && !/\b(wait|actually|let's|i will|the (user|prompt|schema))\b/i.test(first) ? first : '';
+  }
+  if (s.length <= (max||140)) return s;
+  const first = s.split(/(?<=[.!?])\s/)[0]; return first.length <= (max||140) ? first : s.slice(0, (max||140)-1).replace(/\s\S*$/,'') + '…';
+}
 function toRecipe(o, src){
   const eq = Array.isArray(o.equipment) ? [...new Set(o.equipment.map(eqKey).filter(Boolean))] : null;
   const alt = {}; if (o.alt && typeof o.alt==='object') for (const k in o.alt){ const kk = eqKey(k); if (kk && o.alt[k]) alt[kk] = String(o.alt[k]).slice(0,300); }
   return {id:(src==='import'?'im':'ai')+uid(), n:String(o.name||'Recipe').slice(0,80), t:Math.round(+o.time)||30, p:Math.round(+o.protein)||0, serves:+o.servings||0,
     tags:(o.tags||[]).filter(t=>TAGS.includes(t)),
-    i:(o.ingredients||[]).map(x=>[String(x.label||x.name||''), String(x.key||x.label||'').toLowerCase().trim(), x.optional?1:0]).filter(x=>x[0]&&x[1]),
-    s:(o.spices||[]).map(s=>String(s).toLowerCase().trim()).filter(Boolean), st:(o.steps||[]).map(String),
+    i:(o.ingredients||[]).slice(0,30).map(x=>[shortLine(x.label||x.name||'', 90), String(x.key||x.label||'').toLowerCase().trim(), x.optional?1:0]).filter(x=>x[0]&&x[1]),
+    s:(o.spices||[]).map(s=>String(s).toLowerCase().trim()).filter(Boolean), st:(o.steps||[]).map(s=>String(s).trim()).filter(Boolean).slice(0,14).map(s=>s.length>500?shortLine(s,500):s),
     ...(eq ? {eq} : {}), ...(Object.keys(alt).length ? {alt} : {}),
-    why:o.why?String(o.why):'', source:o.source?String(o.source):'', ai:true, src:src||'ai'};
+    why:shortLine(o.why, 140), source:o.source?String(o.source):'', ai:true, src:src||'ai'};
 }
-const JSON_RULES = `"key" is a short, lowercase, generic word that would appear in the name of a kitchen item (e.g. "chicken", "spinach", "tinned tomato", "spring onion"); give alternatives separated by | if useful. Put dried spices, herbs and seasonings in "spices" (plain lowercase names like "smoked paprika"), not in ingredients. Leave out salt, black pepper, oil and water. "protein" is estimated grams per serving. "time" is total minutes. Allowed tags: veg, vegan, pesc, gf, df, lowcarb, budget, pork. "equipment" lists the appliances the method needs, using only these words: hob, oven, microwave, airfryer, slowcooker, pressure, grill, blender, ricecooker.`;
+const JSON_RULES = `"key" is a short, lowercase, generic word that would appear in the name of a kitchen item (e.g. "chicken", "spinach", "tinned tomato", "spring onion"); give alternatives separated by | if useful. Put dried spices, herbs and seasonings in "spices" (plain lowercase names like "smoked paprika"), not in ingredients. Leave out salt, black pepper, oil and water. "protein" is estimated grams per serving. "time" is total minutes. "why" is one short sentence of at most 15 words; never think out loud or explain your choices in any field. Allowed tags: veg, vegan, pesc, gf, df, lowcarb, budget, pork. "equipment" lists the appliances the method needs, using only these words: hob, oven, microwave, airfryer, slowcooker, pressure, grill, blender, ricecooker.`;
 
 async function runImport(input, el, image){
   input = String(input||'').trim(); if (!input && !image) return;
@@ -1014,7 +1024,7 @@ Reply with ONLY JSON, no prose:
 {"recipes":[{"name":"","time":30,"protein":35,"tags":[],"equipment":["hob"],"why":"one short line on what it uses up","ingredients":[{"label":"200g chicken breast","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}]}
 ${JSON_RULES}`;
   try {
-    const j = await askJSON(prompt, {schema:S_IDEAS, onText:t=>{ const n = (t.match(/"name"/g)||[]).length; const el = $('#aiProg'); if (el) el.textContent = n ? `Writing recipe ${Math.min(3,n)} of 3…` : 'Thinking…'; }});
+    const j = await askJSON(prompt, {schema:S_IDEAS, onText:(t,th)=>{ const n = (t.match(/"name"/g)||[]).length; const el = $('#aiProg'); if (el) el.textContent = n ? `Writing recipe ${Math.min(3,n)} of 3…` : th ? 'Thinking it through…' : 'Thinking…'; }});
 
 
     ai.recipes = (j.recipes||[]).slice(0,4).map(o=>toRecipe(o,'ai'));
