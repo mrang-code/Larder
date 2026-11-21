@@ -91,6 +91,7 @@ h1{font-size:32px;line-height:1.1;font-weight:700;letter-spacing:-.025em;margin:
 .pill.on{background:var(--fg);color:var(--bg)}
 .pill.out{color:var(--mut);text-decoration:line-through}
 .pills{display:flex;flex-wrap:wrap;margin-top:8px}
+.pills.row1{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-right:-20px;padding-right:20px}.pills.row1::-webkit-scrollbar{display:none}.pills.row1 .pill{flex:none}
 .seg{display:flex;background:var(--soft);border-radius:12px;padding:3px;margin-top:8px}
 .seg button{flex:1;height:38px;border-radius:9px;font-size:14.5px;font-weight:500;color:var(--mut)}
 .seg button.on{background:var(--sheet);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -169,6 +170,9 @@ select.psel{padding-right:10px;-webkit-appearance:none;appearance:none;text-alig
 .bar{height:3px;background:var(--line);border-radius:2px;margin:8px 0 0;overflow:hidden}.bar i{display:block;height:100%;background:var(--acc);transition:width .2s}
 .ovbody{flex:1;padding:28px 0}
 .stepn{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.cues{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.cue{display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:0 13px;border-radius:17px;background:var(--soft);font-size:15px;color:var(--mut)}.cue b{color:var(--fg);font-weight:600}
+.hb{display:inline-flex;align-items:flex-end;gap:2px;height:16px}.hb i{width:4px;border-radius:2px;background:var(--line)}.hb i:nth-child(1){height:6px}.hb i:nth-child(2){height:9px}.hb i:nth-child(3){height:12px}.hb i:nth-child(4){height:16px}.hb i.on{background:var(--warn)}
 .stept{font-size:25px;line-height:1.35;letter-spacing:-.01em;margin-top:14px}
 .timer{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:16px;background:var(--acc-soft);color:var(--acc);font-weight:600;font-size:14px;font-variant-numeric:tabular-nums}
 .big{font-size:28px;line-height:1.2;font-weight:700;letter-spacing:-.02em;margin:0}
@@ -277,6 +281,7 @@ function dueClass(d){ return d<0?'bad':(d<=state.prefs.warn?'soon':'ok'); }
 function classify(name){
   const n = String(name).toLowerCase().replace(/[’']/g,'').trim();
   let bf=null, bl=0; for (const k in FOOD) if (n.includes(k) && k.length>bl){ bf=k; bl=k.length; }
+  if (bf && FOOD[bf].cat !== 'Bakery'){ let tk=null, tl=0; for (const k in FOOD) if (FOOD[k].cat==='Bakery' && new RegExp('\\b' + k + 'e?s?$').test(n) && k.length>tl){ tk=k; tl=k.length; } if (tk && !/toilet|kitchen roll|spring roll|sushi/.test(n)){ bf=tk; bl=99; } }
   let sl=0; for (const s of SPICES) if (n.includes(s) && s.length>sl) sl=s.length;
   if (sl>bl) return {spice:true};
   const base = bf ? {spice:false, ...FOOD[bf]} : {spice:false, d:7, frz:90, cat:'Other', loc:'fridge'};
@@ -449,7 +454,7 @@ function addSpice(name, level){
   if (ex){ ex.level = level; ex.listed = false; } else state.spices.push({id:uid(), name:n, level, listed:false});
 }
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const sing = w => w.length>3 && /[^s]s$/.test(w) ? w.replace(/(oe|ie)s$/, '$1').replace(/([^aeiou])ies$/, '$1y').replace(/(ch|sh|x|ss|o)es$/, '$1').replace(/s$/, '') : w;
+const sing = w => w.length>3 && /[^s]s$/.test(w) ? w.replace(/([tm]at)oes$/, '$1o').replace(/(oe|ie)s$/, '$1').replace(/([^aeiou])ies$/, '$1y').replace(/(ch|sh|x|ss|o)es$/, '$1').replace(/s$/, '') : w;
 const _nn = new Map();
 const normName = s => { s = String(s||''); let v = _nn.get(s); if (v === undefined){ v = s.toLowerCase().replace(/[^a-z' ]+/g,' ').split(' ').filter(Boolean).map(sing).join(' '); if (_nn.size > 5000) _nn.clear(); _nn.set(s, v); } return v; };
 const hasWords = (hay, needle) => !!needle && new RegExp('(^| )' + reEsc(needle) + '( |$)').test(hay);
@@ -661,10 +666,10 @@ const S_STR = {type:'STRING'}, S_LIST = {type:'ARRAY', items:{type:'STRING'}};
 const S_RECIPE = {type:'OBJECT', properties:{
   name:S_STR, servings:{type:'INTEGER'}, time:{type:'INTEGER'}, protein:{type:'INTEGER'}, kcal:{type:'INTEGER'}, tags:S_LIST, equipment:S_LIST, why:S_STR,
   ingredients:{type:'ARRAY', items:{type:'OBJECT', properties:{label:S_STR, key:S_STR, optional:{type:'BOOLEAN'}}, required:['label','key']}},
-  spices:S_LIST, steps:S_LIST,
+  spices:S_LIST, spiceAmounts:S_LIST, steps:S_LIST,
   alt:{type:'OBJECT', properties:{airfryer:S_STR, slowcooker:S_STR, pressure:S_STR}},
   error:S_STR},
-  propertyOrdering:['error','name','time','servings','protein','kcal','tags','equipment','ingredients','spices','steps','alt','why']};
+  propertyOrdering:['error','name','time','servings','protein','kcal','tags','equipment','ingredients','spices','spiceAmounts','steps','alt','why']};
 const S_FULL = {...S_RECIPE, required:['name','time','servings','protein','kcal','ingredients','steps']};
 const S_IDEAS = {type:'OBJECT', properties:{recipes:{type:'ARRAY', items:S_FULL}}, required:['recipes']};
 const S_SCAN = {type:'OBJECT', properties:{items:{type:'ARRAY', items:{type:'OBJECT', properties:{name:S_STR, qty:S_STR}, required:['name']}}}, required:['items']};
@@ -682,11 +687,11 @@ function toRecipe(o, src){
   return {id:(src==='import'?'im':'ai')+uid(), n:String(o.name||'Recipe').slice(0,80), t:Math.round(+o.time)||30, p:Math.round(+o.protein)||0, k:Math.round(+o.kcal)||0, serves:Math.round(+o.servings)||0,
     tags:(o.tags||[]).filter(t=>TAGS.includes(t)),
     i:(o.ingredients||[]).slice(0,30).map(x=>[shortLine(x.label||x.name||'', 90), String(x.key||x.label||'').toLowerCase().trim(), x.optional?1:0]).filter(x=>x[0]&&x[1]),
-    s:(o.spices||[]).map(s=>String(s).toLowerCase().trim()).filter(Boolean), st:(o.steps||[]).map(s=>String(s).trim()).filter(Boolean).slice(0,14).map(s=>s.length>500?shortLine(s,500):s),
+    s:(o.spices||[]).map(s=>String(s).toLowerCase().trim()).filter(Boolean), ...(Array.isArray(o.spiceAmounts) && o.spiceAmounts.length ? {sa:o.spiceAmounts.map(x=>shortLine(x, 60)).filter(Boolean).slice(0,20)} : {}), st:(o.steps||[]).map(s=>String(s).trim()).filter(Boolean).slice(0,14).map(s=>s.length>500?shortLine(s,500):s),
     ...(eq ? {eq} : {}), ...(Object.keys(alt).length ? {alt} : {}),
     why:shortLine(o.why, 140), source:o.source?String(o.source):'', ai:true, src:src||'ai'};
 }
-const JSON_RULES = `"key" is a short, lowercase, generic word that would appear in the name of a kitchen item (e.g. "chicken", "spinach", "tinned tomato", "spring onion"); give alternatives separated by | if useful. Put dried spices, herbs and seasonings in "spices" (plain lowercase names like "smoked paprika"), not in ingredients. Leave out salt, black pepper, oil and water. "protein" is estimated grams per serving and "kcal" estimated calories per serving. "time" is total minutes. "why" is one short sentence of at most 15 words; never think out loud or explain your choices in any field. Every ingredient "label" starts with its amount (e.g. "300g chicken breast", "2 peppers", "1 tin chopped tomatoes") whenever there is one. Allowed tags: veg, vegan, pesc, gf, df, lowcarb, budget, pork. "equipment" lists the appliances the method needs, using only these words: hob, oven, microwave, airfryer, slowcooker, pressure, grill, blender, ricecooker.`;
+const JSON_RULES = `"key" is a short, lowercase, generic word that would appear in the name of a kitchen item (e.g. "chicken", "spinach", "tinned tomato", "spring onion"); give alternatives separated by | if useful. Put dried spices, herbs and seasonings in "spices" (plain lowercase names like "smoked paprika"), not in ingredients. Leave out salt, black pepper, oil and water. "protein" is estimated grams per serving and "kcal" estimated calories per serving. "time" is total minutes. "why" is one short sentence of at most 15 words; never think out loud or explain your choices in any field. Every ingredient "label" starts with its amount (e.g. "300g chicken breast", "2 peppers", "1 tin chopped tomatoes") whenever there is one. Each step names exactly what goes in with its amount (e.g. "Add 1 tsp ground cumin, 1 tsp smoked paprika and the 300g chicken"), never just "add the spices" or "add everything". Every hob step says the heat (low, medium, medium-high or high) and every oven step gives the temperature in °C. "spiceAmounts" gives each spice with its amount, in the same order as "spices" (e.g. "1 tsp ground cumin"). Allowed tags: veg, vegan, pesc, gf, df, lowcarb, budget, pork. "equipment" lists the appliances the method needs, using only these words: hob, oven, microwave, airfryer, slowcooker, pressure, grill, blender, ricecooker.`;
 const DIN_RE = /steak|curry|pasta|spaghetti|noodle|stir.?fry|chilli|bolognese|risotto|roast|burger|traybake|casserole|stew|prawn|salmon fillet|meatball|fajita|kofta|\bdal\b|soup/i;
 const BRK_RE = /yogh?urt bowl|porridge|granola|overnight oat|\bon toast\b|and toast\b|pancake|smoothie|cereal|scramble|omelette|breakfast|bagel/i;
 function goodRecipe(r, meal){
@@ -931,7 +936,7 @@ const STORES = {
 /* ---------- shopping cost ---------- */
 // Typical price (pence) of the usual pack at a big supermarket, late 2026. Live checks replace these.
 const PRICE = {milk:165,'oat milk':180,'almond milk':165,'soya milk':150,butter:260,cheddar:330,cheese:300,mozzarella:95,halloumi:300,feta:160,parmesan:280,'cream cheese':130,'double cream':150,'single cream':110,'sour cream':110,'creme fraiche':120,yogurt:150,yoghurt:150,'greek yogurt':190,'greek yoghurt':190,egg:230,
-  bread:140,sourdough:220,wrap:150,tortilla:150,pitta:85,bagel:140,naan:140,roll:120,croissant:175,crumpet:95,
+  bread:140,bun:140,'burger bun':140,'hot dog roll':140,brioche:175,sourdough:220,wrap:150,tortilla:150,pitta:85,bagel:140,naan:140,roll:120,croissant:175,crumpet:95,
   chicken:520,'chicken thigh':400,'whole chicken':500,'chicken wing':350,'chicken drumstick':300,mince:400,'beef mince':400,'lamb mince':500,'pork mince':350,'turkey mince':400,steak:600,beef:550,lamb:700,pork:450,'pork chop':400,sausage:300,bacon:250,ham:200,chorizo:225,salami:200,'pulled pork':400,
   salmon:450,cod:450,haddock:450,tuna:110,'tuna steak':400,prawn:375,mackerel:250,fish:400,'fish finger':250,tofu:200,quorn:300,
   potato:175,'sweet potato':120,'new potato':130,onion:95,'red onion':85,'spring onion':60,garlic:70,carrot:55,broccoli:75,tenderstem:150,cauliflower:115,cabbage:80,spinach:125,lettuce:75,salad:100,rocket:100,cucumber:75,tomato:95,'cherry tomato':110,pepper:175,'red pepper':75,mushroom:120,courgette:90,aubergine:85,leek:150,celery:80,avocado:100,ginger:50,chilli:70,sweetcorn:70,'corn on the cob':150,peas:125,'green bean':110,kale:100,asparagus:200,beetroot:90,parsnip:70,swede:70,'butternut squash':120,
@@ -1745,7 +1750,7 @@ function sheetRecipe(id, opts){
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:18px"><span>Serves</span><div class="stepper"><button data-sv="-1" aria-label="Fewer">−</button><b>${sv}</b><button data-sv="1" aria-label="More">+</button></div></div>
     <div class="sec" style="margin-top:22px"><h2>Ingredients</h2>${e.missing.length ? `<span class="mut sm">${e.missing.length} to buy</span>` : '<span class="lnk sm">You have it all</span>'}</div>
     <div>${e.rows.map(x=>`<div class="ing"><span class="k ${x.item||x.rack?'':'no'}">${x.item||x.rack?'✓':'·'}</span><span>${esc(scaleLabel(x.label, sc))}${x.opt?' <small>(optional)</small>':''}${x.short?' <small>· not quite enough</small>':''}${x.item && x.item.loc==='freezer' ? ' <small>· defrost</small>' : ''}</span></div>`).join('')}
-      ${(r.s||[]).length ? `<div class="ing"><span class="k">·</span><span class="mut">${esc(r.s.join(', '))}</span></div>` : ''}</div>
+      ${(r.s||[]).length ? `<div class="ing"><span class="k">·</span><span class="mut">${esc(r.s.map(sp=>scaleLabel(spiceAmt(r, sp), sc)).join(', '))}</span></div>` : ''}</div>
     ${missing.length ? `<button class="lnk" id="rList" style="margin-top:12px">Add ${missing.length} to your list</button>` : ''}
     ${alts.length ? alts.map(([k,t])=>`<p class="note"><b>${esc(applName(k))}:</b> ${esc(t)}</p>`).join('') : ''}
     <div class="sec" style="margin-top:22px"><h2>Method</h2></div>
@@ -1784,7 +1789,7 @@ function sheetBrowse(q){
     el.querySelector('#bl').innerHTML = xs.length ? xs.map(e=>recRow(e.r, recSub(e))).join('') : '<p class="note">No recipes match.</p>';
   };
   openSheet(`${head('Recipes')}<input type="search" id="bq" placeholder="Search by dish or ingredient" value="${esc(ui.browseQ)}" style="margin-top:10px" autocomplete="off">
-    <div class="pills" style="margin-top:12px">${filters.map(([k,l])=>`<button class="pill ${ui.filt===k?'on':''}" data-bf="${k}">${l}</button>`).join('')}</div><div class="rows" id="bl" style="margin-top:6px"></div>`, el=>{
+    <div class="pills row1" style="margin-top:12px">${filters.map(([k,l])=>`<button class="pill ${ui.filt===k?'on':''}" data-bf="${k}">${l}</button>`).join('')}</div><div class="rows" id="bl" style="margin-top:6px"></div>`, el=>{
     draw(el);
     el.querySelector('#bq').oninput = ev=>{ ui.browseQ = ev.target.value; draw(el); };
     el.querySelectorAll('[data-bf]').forEach(b=>b.onclick=()=>{ ui.filt = b.dataset.bf; el.querySelectorAll('[data-bf]').forEach(x=>x.classList.toggle('on', x===b)); draw(el); });
@@ -1889,6 +1894,56 @@ ${JSON_RULES}`;
 }
 
 /* cooking, step by step */
+// What a step uses, worked out from its words, so every recipe (old ones too) gets it.
+function spiceAmt(r, sp){ const n = normName(sp); return (r.sa||[]).find(a=>hasWords(normName(a), n)) || sp; }
+function stepUses(r, s, sc){
+  const t = normName(s), out = [];
+  const keyHit = k => k && hasWords(t, normName(k));
+  (r.i||[]).forEach(x=>{ const al = x[1].split('|').map(a=>a.trim()).filter(Boolean);
+    let hit = al.some(keyHit);
+    if (!hit){ const last = al.map(a=>normName(a).split(' ').pop()).filter(w=>w.length>3); hit = last.some(w=>hasWords(t, w) && !(r.i||[]).some(y=>y!==x && y[1].split('|').some(a=>normName(a)!==normName(x[1]) && normName(a).endsWith(w) && keyHit(a)))); }
+    if (hit) out.push({label:scaleLabel(x[0], sc), spice:false, name:al[0], keys:x[1]}); });
+  let sps = (r.s||[]).filter(sp=>hasWords(t, normName(sp)) || hasWords(t, normName(sp).split(' ').pop()));
+  if (!sps.length && /\b(spice|spices|seasoning|seasonings|spice mix|dry ingredients)\b/i.test(s)) sps = r.s || [];
+  sps.forEach(sp=>out.push({label:scaleLabel(spiceAmt(r, sp), sc), spice:true, name:sp}));
+  return out;
+}
+const COOK_ACTS = [[/\b(chop|chopped|dice|diced|finely chop|mince|minced)\b/i,'Chop',1],[/\b(slice|sliced|thinly slice)\b/i,'Slice',1],[/\b(grate|grated|zest)\b/i,'Grate',1],[/\b(peel|peeled)\b/i,'Peel',1],[/\b(crush|crushed)\b/i,'Crush',1],
+  [/\bmarinat/i,'Marinate',0],[/\b(whisk|beat)\b/i,'Whisk',0],[/\b(blend|blitz)/i,'Blend',0],[/\bsear/i,'Sear',0],[/\b(fry|fried|frying|saut|brown|soften|sweat|stir.?fry)/i,'Fry',0],[/\bboil/i,'Boil',0],[/\bsimmer/i,'Simmer',0],
+  [/\b(bake|baking)\b/i,'Bake',0],[/\broast/i,'Roast',0],[/\bgrill/i,'Grill',0],[/\bair.?fr/i,'Air fry',0],[/\bmicrowave/i,'Microwave',0],[/\b(rest|stand|cool)\b/i,'Rest',0],[/\b(serve|plate up|garnish)\b/i,'Serve',0]];
+function stepHeat(s){
+  const t = String(s).toLowerCase();
+  const tm = t.match(/\b(1\d\d|2\d\d)\s*°?\s*c\b(?:[^.]{0,12}?(1\d\d|2\d\d)\s*°?\s*c?\s*fan)?/), gas = t.match(/gas mark\s*(\d)/);
+  if ((tm || gas) && /oven|bake|roast|preheat|air.?fr|fan|gas/.test(t)) return {oven:true, name:(/air.?fr/.test(t) ? 'Air fryer ' : 'Oven ') + (tm ? tm[1] + '°C' + (tm[2] ? ' (' + tm[2] + '° fan)' : '') : 'gas ' + gas[1])};
+  if (!/\b(hob|pan|wok|pot|saucepan|heat|fry|fried|frying|sear|boil|simmer|saut|brown|soften|sweat|melt|toast|reduce|cook)/.test(t)) return null;
+  if (/medium[- ]high|med-high/.test(t)) return {lvl:3, name:'Medium-high'};
+  if (/medium[- ]low|low[- ]medium/.test(t)) return {lvl:1, name:'Medium-low'};
+  if (/\b(high heat|on high|very hot|smoking|rolling boil)\b/.test(t)) return {lvl:4, name:'High'};
+  if (/\b(medium heat|on medium|medium)\b/.test(t)) return {lvl:2, name:'Medium'};
+  if (/\b(low heat|on low|gently|low)\b/.test(t)) return {lvl:1, name:'Low'};
+  if (/\bsear|\bboil(?!ed)/.test(t)) return {lvl:4, name:'High'};
+  if (/\bsimmer|\bmelt/.test(t)) return {lvl:1, name:'Low'};
+  if (/\b(fry|fried|frying|brown|stir.?fry|toast)/.test(t)) return {lvl:3, name:'Medium-high'};
+  if (/\b(soften|sweat|saut|reduce)/.test(t)) return {lvl:2, name:'Medium'};
+  return null;
+}
+function stepCues(r, s, uses){
+  const cues = [], acts = [], h = stepHeat(s), seen = new Set();
+  if (h) cues.push(h.oven ? `<span class="cue"><b>${esc(h.name)}</b></span>` : `<span class="cue heat" aria-label="Heat ${h.name}"><i class="hb">${[1,2,3,4].map(n=>`<i class="${n<=h.lvl?'on':''}"></i>`).join('')}</i><b>${h.name}</b></span>`);
+  const food = uses.filter(u=>!u.spice);
+  // which foods each prep verb applies to: the words after it, up to the next prep verb or the end of the sentence
+  // ("peel and dice the potatoes": peel borrows dice's potatoes)
+  const prepRe = /\b(chop|chopped|dice|diced|mince|minced|slice|sliced|grate|grated|zest|peel|peeled|crush|crushed)\b/gi, marks = [];
+  let mm; while ((mm = prepRe.exec(s))) marks.push([mm.index, mm[0].length]);
+  const inClause = from => { const nx = marks.find(([x])=>x > from); let end = s.slice(from).search(/[.;]/); end = end < 0 ? s.length : from + end;
+    const cl = normName(s.slice(from, Math.min(end, nx ? nx[0] : s.length)));
+    const f = food.filter(u=>u.keys.split('|').some(a=>hasWords(cl, normName(a)) || hasWords(cl, normName(a).split(' ').pop()))).map(u=>u.name);
+    return f.length || !nx || nx[0] > end ? f : inClause(nx[0]); };
+  const objFor = re => { const m = s.match(re); if (!m) return []; const f = inClause(s.indexOf(m[0]) + m[0].length - 1); return f.length || marks.length > 1 ? f : food.map(u=>u.name); };
+  COOK_ACTS.forEach(([re, name, prep])=>{ if (seen.size >= 3 || seen.has(name) || !re.test(s)) return; if (h && h.oven && /Fry|Boil|Simmer|Sear/.test(name)) return; seen.add(name);
+    const obj = prep ? objFor(re) : []; acts.push([s.search(re), `<span class="cue"><b>${name}</b>${obj.length ? ' ' + esc(obj.slice(0,3).join(', ')) : ''}</span>`]); });
+  return cues.concat(acts.sort((x,y)=>x[0]-y[0]).map(x=>x[1])).join('');
+}
 function openCook(r){
   cook = {r, i:-1, end:0, label:''}; closeSheet(); keepAwake(true);
   try { audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)(); } catch(e){}
@@ -1898,9 +1953,11 @@ function openCook(r){
 function renderCook(){
   const r = cook.r, n = r.st.length, i = cook.i, sc = (ui.serves[r.id] || servesOf(r)) / servesOf(r); let body;
   if (i < 0){ const e = evalRecipe(r, {scale:sc});
-    body = `<p class="stepn">Get everything out</p><div style="margin-top:14px">${e.rows.map(x=>`<div class="ing"><span class="k ${x.item||x.rack?'':'no'}">${x.item||x.rack?'✓':'·'}</span><span>${esc(scaleLabel(x.label, sc))}${x.opt?' <small>(optional)</small>':''}${x.item && x.item.loc==='freezer' ? ' <small>· defrost first</small>' : ''}</span></div>`).join('')}${(r.s||[]).length ? `<div class="ing"><span class="k">·</span><span class="mut">${esc(r.s.join(', '))}</span></div>` : ''}</div>`;
-  } else { const s = r.st[i], m = stepMinutes(s);
-    body = `<p class="stepn">Step ${i+1} of ${n}</p><p class="stept">${esc(s)}</p>${m && !cook.end ? `<button class="btn" data-ck2="timer" data-m="${m}" style="margin-top:22px">Start a ${m} min timer</button>` : ''}`; }
+    body = `<p class="stepn">Get everything out</p><div style="margin-top:14px">${e.rows.map(x=>`<div class="ing"><span class="k ${x.item||x.rack?'':'no'}">${x.item||x.rack?'✓':'·'}</span><span>${esc(scaleLabel(x.label, sc))}${x.opt?' <small>(optional)</small>':''}${x.item && x.item.loc==='freezer' ? ' <small>· defrost first</small>' : ''}</span></div>`).join('')}${(r.s||[]).length ? `<div class="ing"><span class="k">·</span><span class="mut">${esc(r.s.map(sp=>scaleLabel(spiceAmt(r, sp), sc)).join(', '))}</span></div>` : ''}</div>`;
+  } else { const s = r.st[i], m = stepMinutes(s), uses = stepUses(r, s, sc), cues = stepCues(r, s, uses);
+    body = `<p class="stepn">Step ${i+1} of ${n}</p>${cues ? `<div class="cues">${cues}</div>` : ''}<p class="stept">${esc(s)}</p>
+      ${uses.length ? `<p class="stepn" style="margin-top:26px">You’ll need</p><div style="margin-top:8px">${uses.map(u=>`<div class="ing"><span class="k">·</span><span>${esc(u.label)}</span></div>`).join('')}</div>` : ''}
+      ${m && !cook.end ? `<button class="btn" data-ck2="timer" data-m="${m}" style="margin-top:22px">Start a ${m} min timer</button>` : ''}`; }
   $('#cook').innerHTML = `<div class="in"><div class="ovtop"><button class="x" data-ck2="close" aria-label="Close">×</button><span class="t">${esc(r.n)}</span>${cook.end ? `<span class="timer" id="cookTimer">${fmtT(cook.end-Date.now())}</span>` : ''}</div>
     <div class="bar"><i style="width:${Math.round((i+1)/n*100)}%"></i></div><div class="ovbody">${body}</div>
     <div class="btns"><button class="btn" data-ck2="prev" ${i<0?'disabled':''}>Back</button><button class="btn pri" data-ck2="next">${i<0 ? 'Start' : i>=n-1 ? 'Done' : 'Next'}</button></div></div>`;
