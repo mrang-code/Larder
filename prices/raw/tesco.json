@@ -1,0 +1,447 @@
+{
+ "milk": {
+  "price": 1.75,
+  "loyalty": null,
+  "product": "Tesco British Semi Skimmed Milk 2.272L, 4 Pints"
+ },
+ "butter": {
+  "price": 1.95,
+  "loyalty": null,
+  "product": "Tesco British Salted Block Butter 250g"
+ },
+ "cheddar": {
+  "price": 3.2,
+  "loyalty": null,
+  "product": "Tesco Mature Cheddar 400G"
+ },
+ "mozzarella": {
+  "price": 1.3,
+  "loyalty": null,
+  "product": "Tesco Mozzarella 200g"
+ },
+ "halloumi": {
+  "price": 1.99,
+  "loyalty": null,
+  "product": "Tesco Halloumi 225G"
+ },
+ "feta": {
+  "price": 2.35,
+  "loyalty": null,
+  "product": "Tesco Greek Feta Cheese 200 G"
+ },
+ "parmesan": {
+  "price": 4.0,
+  "loyalty": null,
+  "product": "Tesco Parmigiano Reggiano Cheese 200 G"
+ },
+ "cream cheese": {
+  "price": 1.35,
+  "loyalty": null,
+  "product": "Tesco Soft Cheese Plain Full Fat 200G"
+ },
+ "double cream": {
+  "price": 1.75,
+  "loyalty": null,
+  "product": "Tesco British Double Cream 300Ml"
+ },
+ "creme fraiche": {
+  "price": 0.75,
+  "loyalty": null,
+  "product": "Tesco British Creme Fraiche 300Ml"
+ },
+ "yogurt": {
+  "price": 1.15,
+  "loyalty": null,
+  "product": "Tesco Natural Yogurt 500G"
+ },
+ "greek yogurt": {
+  "price": 1.15,
+  "loyalty": null,
+  "product": "Tesco Greek Style Yogurt 500G"
+ },
+ "egg": {
+  "price": 2.1,
+  "loyalty": null,
+  "product": "Tesco Large Free Range Eggs 6 Pack"
+ },
+ "bread": {
+  "price": 0.8,
+  "loyalty": null,
+  "product": "Tesco Medium Sliced White Bread 800g"
+ },
+ "wrap": {
+  "price": 1.4,
+  "loyalty": null,
+  "product": "Tesco Plain White Tortilla Wraps 8 Pack"
+ },
+ "pitta": {
+  "price": 0.5,
+  "loyalty": null,
+  "product": "Tesco White Plain Pitta Bread 6 Pack"
+ },
+ "naan": {
+  "price": 0.69,
+  "loyalty": null,
+  "product": "Tesco Plain Naans 2 Pack 260G"
+ },
+ "chicken": {
+  "price": 4.95,
+  "loyalty": null,
+  "product": "Tesco British Chicken Breast Fillets 650g"
+ },
+ "chicken thigh": {
+  "price": 5.75,
+  "loyalty": 4.5,
+  "product": "Tesco British Chicken Thigh Fillets 600G"
+ },
+ "whole chicken": {
+  "price": 4.02,
+  "loyalty": null,
+  "product": "Tesco Medium Whole Chicken 1.3-1.7kg"
+ },
+ "beef mince": {
+  "price": 5.2,
+  "loyalty": null,
+  "product": "Tesco Lean Beef Steak Mince 5% Fat 500g"
+ },
+ "mince": {
+  "price": 3.5,
+  "loyalty": null,
+  "product": "Tesco Beef Mince 20% Fat 500g"
+ },
+ "lamb mince": {
+  "price": 6.5,
+  "loyalty": 5.5,
+  "product": "Tesco British Lamb Mince 20% Fat 500G"
+ },
+ "pork mince": {
+  "price": 2.35,
+  "loyalty": null,
+  "product": "Tesco British Pork Mince 10% Fat 500g"
+ },
+ "turkey mince": {
+  "price": 4.75,
+  "loyalty": null,
+  "product": "Tesco British Turkey Breast Mince 2% Fat 500g"
+ },
+ "steak": {
+  "price": 6.0,
+  "loyalty": null,
+  "product": "Tesco Sirloin Steak 227G"
+ },
+ "sausage": {
+  "price": 1.79,
+  "loyalty": null,
+  "product": "Tesco British Pork Sausages 8 Pack 454G"
+ },
+ "bacon": {
+  "price": 1.49,
+  "loyalty": null,
+  "product": "Tesco Smoked Back Bacon Rashers 300G"
+ },
+ "ham": {
+  "price": 2.3,
+  "loyalty": null,
+  "product": "Tesco British Cooked Ham Slices 120g"
+ },
+ "chorizo": {
+  "price": 1.25,
+  "loyalty": null,
+  "product": "Tesco Spanish Chorizo Sausage Slices 150G"
+ },
+ "salmon": {
+  "price": 4.5,
+  "loyalty": null,
+  "product": "Tesco 2 Boneless Salmon Fillets 240g"
+ },
+ "cod": {
+  "price": 8.25,
+  "loyalty": null,
+  "product": "Tesco 2 Boneless Cod Fillets 280G"
+ },
+ "tuna": {
+  "price": 0.8,
+  "loyalty": null,
+  "product": "Tesco Tuna Chunks In Brine 145G"
+ },
+ "prawn": {
+  "price": 3.4,
+  "loyalty": null,
+  "product": "Tesco Raw King Prawns 170g"
+ },
+ "tofu": {
+  "price": 1.95,
+  "loyalty": null,
+  "product": "Tesco Plant Chef Organic Firm Tofu 399g"
+ },
+ "potato": {
+  "price": 1.39,
+  "loyalty": null,
+  "product": "Tesco All Rounder Potatoes 2Kg"
+ },
+ "sweet potato": {
+  "price": 1.19,
+  "loyalty": null,
+  "product": "Tesco Sweet Potatoes 1Kg"
+ },
+ "onion": {
+  "price": 0.95,
+  "loyalty": null,
+  "product": "Tesco Brown Onions 1Kg"
+ },
+ "red onion": {
+  "price": 0.95,
+  "loyalty": 0.8,
+  "product": "Tesco Red Onions Pack 1Kg"
+ },
+ "spring onion": {
+  "price": 0.65,
+  "loyalty": null,
+  "product": "Tesco Bunched Spring Onions 100G"
+ },
+ "garlic": {
+  "price": 0.87,
+  "loyalty": null,
+  "product": "Tesco Garlic 4 Pack"
+ },
+ "carrot": {
+  "price": 0.75,
+  "loyalty": null,
+  "product": "Tesco Carrots 1Kg"
+ },
+ "broccoli": {
+  "price": 0.9,
+  "loyalty": null,
+  "product": "Tesco Broccoli 375G"
+ },
+ "cauliflower": {
+  "price": 1.18,
+  "loyalty": null,
+  "product": "Tesco Cauliflower Each"
+ },
+ "spinach": {
+  "price": 1.3,
+  "loyalty": null,
+  "product": "Tesco Baby Spinach 250G"
+ },
+ "lettuce": {
+  "price": 0.89,
+  "loyalty": null,
+  "product": "Tesco Iceberg Lettuce Each"
+ },
+ "cucumber": {
+  "price": 1.25,
+  "loyalty": null,
+  "product": "Tesco Whole Large Cucumber"
+ },
+ "tomato": {
+  "price": 0.99,
+  "loyalty": 0.79,
+  "product": "Tesco Classic Round Tomatoes 6 Pack"
+ },
+ "cherry tomato": {
+  "price": 1.0,
+  "loyalty": null,
+  "product": "Tesco Cherry Tomatoes 300G"
+ },
+ "mushroom": {
+  "price": 1.29,
+  "loyalty": 1.0,
+  "product": "Tesco Closed Cup Mushrooms 400g"
+ },
+ "courgette": {
+  "price": 1.39,
+  "loyalty": null,
+  "product": "Tesco Courgettes Pre Packed 500G"
+ },
+ "aubergine": {
+  "price": 0.95,
+  "loyalty": null,
+  "product": "Tesco Aubergine Each"
+ },
+ "avocado": {
+  "price": 1.5,
+  "loyalty": null,
+  "product": "Tesco Perfectly Ripe Avocados Twin Pack"
+ },
+ "ginger": {
+  "price": 1.3,
+  "loyalty": null,
+  "product": "Tesco Ginger 100g"
+ },
+ "chilli": {
+  "price": 0.51,
+  "loyalty": null,
+  "product": "Tesco Red Chillies 60G"
+ },
+ "peas": {
+  "price": 1.75,
+  "loyalty": null,
+  "product": "Tesco Garden Peas 1Kg"
+ },
+ "coriander": {
+  "price": 0.5,
+  "loyalty": null,
+  "product": "Tesco Fresh Cut Coriander 30G"
+ },
+ "banana": {
+  "price": 0.78,
+  "loyalty": null,
+  "product": "Tesco Ripe Bananas 5 Pack"
+ },
+ "apple": {
+  "price": 2.95,
+  "loyalty": 2.3,
+  "product": "Tesco Pink Lady Apples 5 Pack"
+ },
+ "lemon": {
+  "price": 1.45,
+  "loyalty": 1.2,
+  "product": "Tesco Lemons 4 Pack"
+ },
+ "grape": {
+  "price": 2.2,
+  "loyalty": null,
+  "product": "Tesco Green Seedless Grapes Pack 500G"
+ },
+ "strawberr": {
+  "price": 2.5,
+  "loyalty": null,
+  "product": "Tesco Strawberries 227G"
+ },
+ "blueberr": {
+  "price": 2.0,
+  "loyalty": 1.5,
+  "product": "Tesco Blueberries 150G"
+ },
+ "pasta": {
+  "price": 0.69,
+  "loyalty": null,
+  "product": "Tesco Penne Pasta Quills 500g"
+ },
+ "basmati": {
+  "price": 1.79,
+  "loyalty": null,
+  "product": "Tesco Basmati Rice 1Kg"
+ },
+ "noodle": {
+  "price": 1.15,
+  "loyalty": null,
+  "product": "Tesco Egg Noodles 300G"
+ },
+ "oats": {
+  "price": 1.35,
+  "loyalty": null,
+  "product": "Tesco Scottish Oats Porridge 1Kg"
+ },
+ "flour": {
+  "price": 0.8,
+  "loyalty": null,
+  "product": "Tesco Plain Flour 1.5kg"
+ },
+ "sugar": {
+  "price": 1.09,
+  "loyalty": null,
+  "product": "Granulated Sugar 1Kg"
+ },
+ "chopped tomato": {
+  "price": 0.47,
+  "loyalty": null,
+  "product": "Tesco Italian Chopped Tomatoes 400G"
+ },
+ "passata": {
+  "price": 0.6,
+  "loyalty": null,
+  "product": "Tesco Tomato Passata 500G"
+ },
+ "tomato puree": {
+  "price": 0.59,
+  "loyalty": null,
+  "product": "Tesco Tomato Puree 200g"
+ },
+ "baked bean": {
+  "price": 0.38,
+  "loyalty": null,
+  "product": "Tesco Baked Beans In Tomato Sauce 420G"
+ },
+ "kidney bean": {
+  "price": 0.39,
+  "loyalty": null,
+  "product": "Tesco Red Kidney Beans In Water 400G"
+ },
+ "chickpea": {
+  "price": 0.45,
+  "loyalty": null,
+  "product": "Tesco Chickpeas In Water 400g"
+ },
+ "coconut milk": {
+  "price": 0.75,
+  "loyalty": null,
+  "product": "Tesco Coconut Milk 400ml"
+ },
+ "stock": {
+  "price": 1.0,
+  "loyalty": null,
+  "product": "Tesco Chicken Stock Cubes 10 Pack 100g"
+ },
+ "olive oil": {
+  "price": 7.25,
+  "loyalty": null,
+  "product": "Tesco Olive Oil 1L"
+ },
+ "soy sauce": {
+  "price": 0.55,
+  "loyalty": null,
+  "product": "Tesco Light Soy Sauce 150ml"
+ },
+ "ketchup": {
+  "price": 3.3,
+  "loyalty": null,
+  "product": "Heinz Top Down Squeezy Tomato Ketchup Sauce 460G"
+ },
+ "mayo": {
+  "price": 2.45,
+  "loyalty": null,
+  "product": "Hellmann's Real Mayonnaise Squeezy 430ml"
+ },
+ "honey": {
+  "price": 1.19,
+  "loyalty": null,
+  "product": "Tesco Squeezy Clear Honey 340g"
+ },
+ "peanut butter": {
+  "price": 0.95,
+  "loyalty": null,
+  "product": "Tesco Smooth Peanut Butter 340G"
+ },
+ "cereal": {
+  "price": 0.99,
+  "loyalty": null,
+  "product": "Tesco Corn Flakes 500g"
+ },
+ "coffee": {
+  "price": 6.25,
+  "loyalty": null,
+  "product": "Nescafe Original Instant Coffee 190g"
+ },
+ "tea": {
+  "price": 3.0,
+  "loyalty": 2.5,
+  "product": "PG Tips Original Black Tea 80 Tea Bags 250g"
+ },
+ "pesto": {
+  "price": 0.89,
+  "loyalty": null,
+  "product": "Tesco Classic Green Pesto 190g"
+ },
+ "juice": {
+  "price": 1.5,
+  "loyalty": null,
+  "product": "Tesco Orange Juice Smooth 1 Litre"
+ },
+ "chips": {
+  "price": 2.65,
+  "loyalty": null,
+  "product": "Tesco Homestyle Straight Cut Oven Chips 950G"
+ }
+}
