@@ -1003,10 +1003,16 @@ const SRV_LS = 'larder-server', HH_LS = 'larder-hh';
 function getServer(){ try { return localStorage.getItem(SRV_LS) || getPush().url || ''; } catch(e){ return ''; } }
 function setServer(u){ try { localStorage.setItem(SRV_LS, u); } catch(e){} }
 function cleanServer(u){ u = String(u||'').trim().replace(/\/+$/, ''); if (!/^https:\/\/[^\s\/]+$/.test(u)) throw {msg:'url'}; return u; }
+// Checks the server from the app. (The server's front page can't be read from the app, so this asks
+// for its push key, which it does allow, and then whether it knows about shared kitchens.)
 async function checkServer(u){
-  let r; try { r = await fetch(u + '/'); } catch(e){ throw {msg:'server'}; }
-  const t = await r.text().catch(()=>''); if (!/Larder (reminder )?server/i.test(t)) throw {msg:'server'};
-  return {v2:/\(v[2-9]\)/.test(t), v3:/\(v[3-9]\)/.test(t), storage:!/NOT connected/.test(t)};
+  let r; try { r = await fetch(u + '/key'); } catch(e){ throw {msg:'server'}; }
+  const j = await r.json().catch(()=>null); if (!j) throw {msg:'server'};
+  if (!r.ok) return {v2:false, v3:false, storage:!/storage/i.test(j.error||'')};
+  if (!j.key) throw {msg:'server'};
+  let hh = false;
+  try { const t = await fetch(u + '/hh/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{"id":"x"}'}); const k = await t.json(); hh = /kitchen/i.test(k.error||''); } catch(e){}
+  return {v2:hh, v3:hh, storage:true};
 }
 let snapMap = null, hhDirty = false, hhBusy = false, hhAgain = false, hhT = null, hhPending = null, hhLast = 0, hhErr = '';
 function getHH(){ try { return JSON.parse(localStorage.getItem(HH_LS)||'null'); } catch(e){ return null; } }
