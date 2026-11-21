@@ -29,6 +29,7 @@ html,body{margin:0;background:var(--bg);color:var(--fg)}
 body{font-size:16px;line-height:1.4;-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
 button,input,select,textarea{font:inherit;color:inherit}
 button{background:none;border:0;padding:0;cursor:pointer}
+input[type=checkbox]{accent-color:var(--acc);width:20px;height:20px;color-scheme:light dark}
 input[type=text],input[type=number],input[type=date],input[type=password],input[type=search],select,textarea{
   width:100%;background:var(--soft);border:1px solid transparent;border-radius:12px;padding:13px 14px;font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
 input:focus,select:focus,textarea:focus{border-color:var(--acc)}
@@ -55,8 +56,8 @@ h1{font-size:32px;line-height:1.1;font-weight:700;letter-spacing:-.025em;margin:
 
 /* rows */
 .rows{border-top:1px solid var(--line)}
-.row{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--line);min-height:54px;width:100%;text-align:left;background:var(--bg)}
-.sheet .row,.ov .row{background:var(--sheet)}
+.row{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--line);min-height:54px;width:100%;text-align:left;background:transparent}
+.sw .row{background:var(--bg)}
 .row .m{flex:1;min-width:0}
 .row .n{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .s{font-size:13.5px;color:var(--mut);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
