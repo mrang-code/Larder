@@ -645,7 +645,7 @@ function parseJSON(txt){
   throw {status:-2};
 }
 async function askJSON(prompt, o){
-  o = o || {}; AI_BEST = !!o.best; AI_KIND = o.kind || 'other'; AI_AID = uid() + uid();
+  o = o || {}; AI_BEST = !!o.best; AI_KIND = o.kind || 'other'; AI_AID = o.aid || (uid() + uid());
   try { return parseJSON(await askAI(prompt, o.url, o.image, o.onText, o.schema)); }
   catch(e){
     if (!(e && (e.status===-2 || e instanceof SyntaxError))) throw e;
@@ -1766,10 +1766,21 @@ function sheetCookNow(pre){
     };
   });
 }
+/* what they asked for ("chicken pasta") must be in the recipe */
+const ASK_ALIKE = {pasta:['spaghetti','penne','fusilli','linguine','tagliatelle','rigatoni','macaroni','orzo','farfalle','lasagne','gnocchi','ravioli','tortellini','conchiglie','pappardelle'], noodle:['ramen','udon','soba'], rice:['risotto','biryani','pilau','paella'], beef:['mince','steak'], potato:['chip','wedge','mash','new potato'], fish:['cod','haddock','salmon','tuna','basa','pollock','hake','mackerel','sea bass'], egg:['omelette','frittata','shakshuka']};
+function askFoods(ask){ return ask ? foodKeysIn(ask) : []; }
+function meetsAsk(r, keys){
+  if (!keys.length) return true;
+  const text = ' ' + normName(r.n + ' ' + r.i.map(x=>x[0] + ' ' + x[1].replace(/\|/g,' ')).join(' ')) + ' ';
+  return keys.every(k=>hasWords(text.trim(), k) || (ASK_ALIKE[k]||[]).some(w=>hasWords(text.trim(), normName(w))));
+}
 async function writeRecipe(o, prog){
   const meal = o.meal, ppl = o.people, food = kitchenLines();
+  const want = askFoods(o.ask), need = want.filter(k=>!matchIng(k, {}) && !rackFor(k) && !findSpice(k));   // asked for but not in the kitchen
+  const aid = uid() + uid();
   const recent = [...new Set(state.log.filter(x=>x.t==='cooked' && x.d >= addDays(-5)).map(x=>x.n))].slice(0,8);
-  const prompt = `You are a practical home cook in the UK. Write 2 different ${meal.toLowerCase()} recipes that someone can cook right now, ${o.strict ? 'made ONLY from what is in this kitchen' : 'using mainly what is in this kitchen, with at most 2 things to buy'}. Use the items with the fewest days left first.
+  const askLine = o.ask ? `WHAT THEY ASKED FOR: "${o.ask}". This matters more than anything else below. Both recipes must be exactly this kind of dish${want.length ? ` and must contain ${want.join(' and ')} as a main ingredient` : ''}. Never swap what they asked for for something else (no prawns when they asked for chicken, no rice when they asked for pasta).${need.length ? ` They don't have ${need.join(' or ')} at home; use it anyway, it will go on their shopping list.` : ''}\n\n` : '';
+  const build = extra => `${askLine}${extra}You are a practical home cook in the UK. Write 2 different ${meal.toLowerCase()} recipes that someone can cook right now, ${o.strict ? 'made ONLY from what is in this kitchen' : 'using mainly what is in this kitchen, with at most 2 things to buy'}. Use the items with the fewest days left first.
 
 KITCHEN (amount, days left):
 ${food || '(empty)'}
@@ -1781,19 +1792,26 @@ TIME: no more than ${o.time} minutes in total
 RECENTLY COOKED: ${recent.join('; ')||'nothing'} (don't repeat)
 ${o.not && o.not.length ? `NOT THESE AGAIN: ${o.not.join('; ')}\n` : ''}THEY FANCY: ${o.ask || 'anything'}
 
-${o.strict ? 'STRICT RULE: every ingredient must be in the KITCHEN or SPICES list. Salt, pepper, oil and water are available. Nothing else, not even optional or a garnish. A simpler dish is better than adding an ingredient.' : 'Salt, pepper, oil and water are available.'}
-${mealRule(meal)}${meal==='Snack' ? ' A snack is one small, quick bite.' : ''}
+${o.strict ? `STRICT RULE: every ingredient must be in the KITCHEN or SPICES list${need.length ? `, except ${need.join(' and ')} which they asked for` : ''}. Salt, pepper, oil and water are available. Nothing else, not even optional or a garnish. A simpler dish is better than adding an ingredient.` : 'Salt, pepper, oil and water are available.'}
+${mealRule(meal)}${o.ask ? ' If what they asked for clashes with this, what they asked for wins.' : ''}${meal==='Snack' ? ' A snack is one small, quick bite.' : ''}
 "servings" is ${ppl}; realistic UK portions; each ingredient label starts with the amount for all servings, e.g. "300g chicken breast", "1 pepper". Never use more than the kitchen has. Write clear numbered steps a beginner can follow, one action per step, with heat levels, times and how to tell it's done. "time" is your honest total.
 Reply with ONLY JSON: {"recipes":[{"name":"","servings":${ppl},"time":25,"protein":35,"kcal":550,"tags":[],"equipment":["hob"],"why":"one short line on what it uses up","ingredients":[{"label":"300g chicken breast","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}]}
 ${JSON_RULES}`;
-  const j = await askJSON(prompt, {schema:S_IDEAS, best:true, kind:'gen', onText:(t,th)=>{ if (prog) prog(/"steps"/.test(t) ? 'Writing the steps…' : /"name"/.test(t) ? 'Choosing ingredients…' : th ? 'Thinking about what you have…' : 'Writing your recipe…'); }});
-  const rs = (j.recipes||[]).map(x=>{ const r = toRecipe(x, 'ai'); r.meal = meal; if (!r.serves) r.serves = ppl; return r; }).filter(r=>goodRecipe(r, meal));
-  for (const r of rs){
-    if (o.strict){ r.i = r.i.filter(x=>!(x[2] && !matchIng(x[1], {}) && !rackFor(x[1]))); if (evalRecipe(r).missing.length) continue; }
-    else if (evalRecipe(r).missing.length > 2) continue;
-    ui.serves[r.id] = ppl; return r;
+  const asked = x => need.some(k=>hasWords(normName(x.label + ' ' + x.keys.replace(/\|/g,' ')), k));
+  let extra = '', rs = [], offAsk = [];
+  for (let attempt = 0; attempt < 2; attempt++){
+    const j = await askJSON(build(extra), {schema:S_IDEAS, best:true, kind:'gen', aid, onText:(t,th)=>{ if (prog) prog(/"steps"/.test(t) ? 'Writing the steps…' : /"name"/.test(t) ? 'Choosing ingredients…' : th ? 'Thinking about what you have…' : 'Writing your recipe…'); }});
+    rs = (j.recipes||[]).map(x=>{ const r = toRecipe(x, 'ai'); r.meal = meal; if (!r.serves) r.serves = ppl; return r; }).filter(r=>goodRecipe(r, o.ask ? '' : meal));
+    offAsk = rs.filter(r=>!meetsAsk(r, want)); rs = rs.filter(r=>meetsAsk(r, want));
+    for (const r of rs){
+      if (o.strict){ r.i = r.i.filter(x=>!(x[2] && !matchIng(x[1], {}) && !rackFor(x[1]))); if (evalRecipe(r).missing.filter(x=>!asked(x)).length) continue; }
+      else if (evalRecipe(r).missing.filter(x=>!asked(x)).length > 2) continue;
+      ui.serves[r.id] = ppl; return r;
+    }
+    if (!offAsk.length) break;      // only retry when it ignored the request
+    extra = `IMPORTANT: your last answer ignored the request and gave "${offAsk.map(r=>r.n).join('" and "')}". Make "${o.ask}" this time.\n\n`;
   }
-  throw {status:-5, message: rs.length ? `Couldn’t make a proper ${meal.toLowerCase()} from only what you have. Turn off “Only use what I have” to allow a couple of things to buy.` : 'The recipe came back incomplete. Try again.'};
+  throw {status:-5, message: !rs.length && offAsk.length ? `Couldn’t write a “${o.ask}” recipe. Try wording it differently, or pick a better model in Admin.` : rs.length ? `Couldn’t make a proper ${meal.toLowerCase()} from only what you have. Turn off “Only use what I have” to allow a couple of things to buy.` : 'The recipe came back incomplete. Try again.'};
 }
 
 /* cooking, step by step */
