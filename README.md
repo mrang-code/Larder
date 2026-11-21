@@ -1,19 +1,15 @@
 # Larder
 
-A kitchen tracker that runs as a home-screen app on iPhone.
+Use what you've got. A kitchen app that runs as a home-screen app on iPhone and Android.
 
-- **Kitchen** – add a shop in one go (type it, scan barcodes, paste an order, or photograph the receipt). Expiry dates fill themselves in. Swipe to mark things used up or binned, with undo.
-- **Spices** – rough levels; low ones go onto the shopping list.
-- **Recipes** – ranked by what you have and what expires first, filtered by diet and the appliances you own. Realistic portions for the number of people you cook for. Favourites and "not for me" shape what you're shown. Import your own from a link, text or photo.
-- **Plan** – breakfast, lunch and dinner for the week, aimed at your calorie and protein targets, using what's in your kitchen first (soonest to expire first), with dinner leftovers for lunch and one combined shopping list.
-- **List** – fills itself from expired food, used-up items, low spices and recipe gaps.
-- **Amounts** – recipes take what they use from your kitchen (500g chicken minus 300g leaves 200g), scaled to the servings you pick.
-- **Cook mode** – one step at a time with timers.
-- **Shared kitchen** – one kitchen, list and plan across several phones.
-- **Waste tracker** – food used up vs binned each month.
-- **Food diary** – what you cooked and ate each day, with your portion, ready to copy into Google Health Coach; optional end-of-day reminder.
-- **Reminders** – optional notifications on days something needs using up (`server/worker.js`, a free Cloudflare Worker that also runs the shared kitchen).
+- **Kitchen** – snap a photo of your shopping (bags, the fridge or a receipt) and every item is logged with an estimated use-by date. Or scan barcodes, or type it in. Use-soon food sits at the top. Swipe right when used, left when binned. A 30-second weekly fridge check keeps it accurate.
+- **Spices & basics** – tap one when it runs out and it goes on your list.
+- **Always keep in stock** – mark staples like milk or eggs; when they run out they go straight on the list.
+- **Cook** – "Cook something now" writes a recipe on the spot from what's in your kitchen, your diet, kit and time, then walks you through it step by step with timers. Below it: what you can make tonight, leftovers to eat, this week's dinners and your cookbook.
+- **Dinners this week** – plans 3, 5 or 7 dinners from what you have; with "Only use what I have" on, new recipes are written for any gaps.
+- **List** – grouped by aisle with links to your supermarket. Tick things as you shop, then put them straight into the kitchen.
+- **Shared kitchen and reminders** – optional, through `server/worker.js`, a free Cloudflare Worker.
 
 Live at https://mrang-code.github.io/Larder/
 
-Everything is stored on the phone. The AI features use your own free Gemini API key, entered in Preferences.
+Data is stored on the phone. AI features use your own free Gemini API key, entered in Settings.
