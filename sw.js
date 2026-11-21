@@ -1,5 +1,5 @@
 // Larder service worker: instant opening, offline support and expiry reminders.
-const CACHE = 'larder-v27';
+const CACHE = 'larder-v28';
 const FILES = ['./', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
@@ -60,12 +60,13 @@ async function onPing() {
   if (due.length && shown.exp !== today) { out.push({tag: 'due', title, body}); shown.exp = today; }
   if (!out.length) out.push({tag: 'due', title, body});   // e.g. "Send a test"
   await kvPut('shown', shown);
-  try { if (self.navigator.setAppBadge) { if (due.length) await self.navigator.setAppBadge(due.length); else await self.navigator.clearAppBadge(); } } catch (err) {}
+  try { if (self.navigator.setAppBadge && due.length && out.some(o => o.tag === 'due' && o.title !== 'Kitchen check')) await self.navigator.setAppBadge(due.length); } catch (err) {}
   await Promise.all(out.map(o => self.registration.showNotification(o.title, {body: o.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'larder-' + o.tag, data: {open: o.tag === 'diary' ? 'diary' : ''}})));
 }
 self.addEventListener('push', e => { e.waitUntil(onPing()); });
 self.addEventListener('notificationclick', e => {
   e.notification.close();
+  try { if (self.navigator.clearAppBadge) self.navigator.clearAppBadge(); } catch (err) {}
   const open = e.notification.data && e.notification.data.open;
   e.waitUntil(self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(list => {
     for (const c of list) { if ('focus' in c) { if (open) c.postMessage({open}); return c.focus(); } }

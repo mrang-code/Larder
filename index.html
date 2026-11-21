@@ -788,9 +788,9 @@ function notifyDates(){
   state.items.forEach(it=>{ [addDays(-state.prefs.warn, it.exp), it.exp].forEach(d=>{ if (d >= t && d <= max) set.add(d); }); });
   return [...set].sort();
 }
+// The badge means "a reminder you haven't seen". Reminders set it; opening the app clears it.
 function setBadge(){
-  try { if (!navigator.setAppBadge) return; const n = state.items.filter(it=>daysLeft(it) <= state.prefs.warn).length;
-    (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(()=>{}); } catch(e){}
+  try { if (!document.hidden && navigator.clearAppBadge) navigator.clearAppBadge().catch(()=>{}); } catch(e){}
 }
 async function syncPush(){
   const p = getPush(); if (!p.on || !getServer() || !pushSupported()) return;
@@ -2121,7 +2121,7 @@ mirrorNotify(); setTimeout(syncPush, 1500);
 if (!state.prefs.onboarded) openOnb();
 if (getHH()) setTimeout(hhSync, 800);
 setInterval(()=>{ if (!document.hidden && getHH()) hhSync(); }, 45000);
-document.addEventListener('visibilitychange', ()=>{ if (!document.hidden){ loadCfg(); if (getHH()) hhSync(); if (sweep()){ save(); render(); } } });
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden){ setBadge(); loadCfg(); if (getHH()) hhSync(); if (sweep()){ save(); render(); } } });
 
 </script>
 </body>
