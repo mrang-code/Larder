@@ -190,6 +190,8 @@ select.psel{padding-right:10px;-webkit-appearance:none;appearance:none;text-alig
 .empty p{color:var(--mut);margin:10px 0 24px}
 .search{margin:0 0 6px}
 .hint{font-size:13px;color:var(--mut);text-align:center;margin-top:14px}
+.cost{display:flex;justify-content:space-between;align-items:center;width:100%;margin:14px 0 2px;padding:14px 16px;border-radius:var(--r);background:var(--soft);color:var(--fg);font-size:15px;text-align:left}
+.cost b{font-variant-numeric:tabular-nums}.cost small{color:var(--mut);font-size:13px}
 </style>
 </head>
 <body>
@@ -561,7 +563,8 @@ async function gemini(prompt, useUrl, image, onText, schema, onlyModel){
   for (const m of models){
     const parts = image ? [{inline_data:{mime_type:'image/jpeg', data:image}}, {text:prompt}] : [{text:prompt}];
     const body = {contents:[{role:'user', parts}], generationConfig:{thinkingConfig:{includeThoughts:true}, maxOutputTokens:12000}};
-    if (useUrl) body.tools = [{url_context:{}}];
+    if (useUrl === 'search') body.tools = [{google_search:{}}];
+    else if (useUrl) body.tools = [{url_context:{}}];
     else { body.generationConfig.responseMimeType = 'application/json'; if (schema) body.generationConfig.responseSchema = schema; }
     let res = await geminiCall(m, body, onText);
     // If this model rejects one of the optional settings, try once more without them.
@@ -907,8 +910,10 @@ function logEv(t, it){
   state.log.push({id:uid(), t, n:it.name, c:it.cat||'', d:iso(today()), ...(it.rid ? {rid:it.rid} : {})});
   const cut = addDays(-400); if (state.log.length > 50 && state.log[0].d < cut) state.log = state.log.filter(x=>x.d >= cut);
 }
-const AISLES = ['Fruit & veg','Bakery','Meat & fish','Dairy & eggs','Chilled','Food cupboard','Herbs & spices','Drinks','Frozen','Other'];
+const AISLES = ['Fruit & veg','Bakery','Meat & fish','Dairy & eggs','Chilled','Food cupboard','Herbs & spices','Drinks','Frozen','Household','Other'];
+const HOUSEHOLD = /\b(toilet roll|loo roll|kitchen roll|tissue|washing up|washing powder|laundry|detergent|fabric softener|bleach|bin bag|bin liner|foil|cling film|baking paper|sponge|dishwasher|soap|hand wash|shower gel|shampoo|conditioner|toothpaste|toothbrush|deodorant|razor|nappies|nappy|wipes|batteries|light bulb)\b/i;
 function aisleOf(name){
+  if (HOUSEHOLD.test(name)) return 'Household';
   const c = classify(name); if (c.spice) return 'Herbs & spices';
   return ({Veg:'Fruit & veg', Fruit:'Fruit & veg', Herbs:'Fruit & veg', Drinks:'Drinks', Meat:'Meat & fish', Fish:'Meat & fish', 'Dairy & eggs':'Dairy & eggs', Chilled:'Chilled', Bakery:'Bakery', Cupboard:'Food cupboard', Frozen:'Frozen'})[c.cat] || 'Other';
 }
@@ -921,6 +926,72 @@ const STORES = {
   waitrose:['Waitrose', q=>`https://www.waitrose.com/ecom/shop/search?searchTerm=${q}`],
   aldi:['Aldi', q=>`https://www.aldi.co.uk/search?text=${q}`]
 };
+
+/* ---------- shopping cost ---------- */
+// Typical price (pence) of the usual pack at a big supermarket, late 2026. Live checks replace these.
+const PRICE = {milk:165,'oat milk':180,'almond milk':165,'soya milk':150,butter:260,cheddar:330,cheese:300,mozzarella:95,halloumi:300,feta:160,parmesan:280,'cream cheese':130,'double cream':150,'single cream':110,'sour cream':110,'creme fraiche':120,yogurt:150,yoghurt:150,'greek yogurt':190,'greek yoghurt':190,egg:230,
+  bread:140,sourdough:220,wrap:150,tortilla:150,pitta:85,bagel:140,naan:140,roll:120,croissant:175,crumpet:95,
+  chicken:520,'chicken thigh':400,'whole chicken':500,'chicken wing':350,'chicken drumstick':300,mince:400,'beef mince':400,'lamb mince':500,'pork mince':350,'turkey mince':400,steak:600,beef:550,lamb:700,pork:450,'pork chop':400,sausage:300,bacon:250,ham:200,chorizo:225,salami:200,'pulled pork':400,
+  salmon:450,cod:450,haddock:450,tuna:110,'tuna steak':400,prawn:375,mackerel:250,fish:400,'fish finger':250,tofu:200,quorn:300,
+  potato:175,'sweet potato':120,'new potato':130,onion:95,'red onion':85,'spring onion':60,garlic:70,carrot:55,broccoli:75,tenderstem:150,cauliflower:115,cabbage:80,spinach:125,lettuce:75,salad:100,rocket:100,cucumber:75,tomato:95,'cherry tomato':110,pepper:175,'red pepper':75,mushroom:120,courgette:90,aubergine:85,leek:150,celery:80,avocado:100,ginger:50,chilli:70,sweetcorn:70,'corn on the cob':150,peas:125,'green bean':110,kale:100,asparagus:200,beetroot:90,parsnip:70,swede:70,'butternut squash':120,
+  coriander:80,parsley:80,basil:90,mint:80,
+  banana:85,apple:175,orange:175,lemon:60,lime:50,grape:200,strawberr:225,blueberr:200,raspberr:225,berries:225,pear:150,mango:120,pineapple:120,melon:160,kiwi:140,satsuma:175,clementine:175,'easy peeler':175,
+  pasta:95,spaghetti:95,penne:95,lasagne:120,rice:200,basmati:220,'microwave rice':110,noodle:120,couscous:100,oats:100,porridge:100,flour:95,sugar:125,'chopped tomato':55,'tinned tomato':55,passata:75,'tomato puree':65,'baked bean':90,'kidney bean':55,'black bean':60,chickpea:60,lentil:120,'coconut milk':120,stock:120,'olive oil':550,oil:250,'soy sauce':150,ketchup:200,mayo:230,mayonnaise:230,honey:250,jam:175,'peanut butter':225,cereal:250,cornflakes:200,granola:300,crisps:175,biscuit:125,chocolate:140,coffee:450,tea:300,'pesto':175,'curry paste':175,'tortilla chips':150,
+  juice:200,water:90,cola:200,coke:200,squash:150,beer:600,wine:700,
+  'ice cream':300,chips:225,pizza:300,'frozen veg':150,'frozen pea':125,
+  'toilet roll':450,'kitchen roll':300,'washing up liquid':150,'bin bag':200,foil:200,'cling film':150};
+const CAT_P = {Veg:100, Herbs:85, Fruit:150, Meat:450, Fish:400, 'Dairy & eggs':180, Chilled:250, Bakery:140, Cupboard:150, Drinks:180, Frozen:250};
+const STORE_X = {tesco:1, sainsburys:1.03, asda:0.95, morrisons:1.01, ocado:1.06, waitrose:1.2, aldi:0.84};
+const PRICES_LS = 'larder-prices', LIVE_DAYS = 14;
+function livePrices(){ try { return JSON.parse(localStorage.getItem(PRICES_LS)||'{}'); } catch(e){ return {}; } }
+function packs(name){ const m = String(name).match(/^\s*(\d+)\s*[x×]\s+|\s[x×]\s*(\d+)\s*$/i); return m ? Math.min(20, +(m[1]||m[2])) : 1; }
+function typicalPence(name){
+  const c = classify(name); if (c.spice) return 110;
+  const n = ' ' + String(name).toLowerCase().replace(/[’']/g,'').replace(/\(.*?\)/g,' ') + ' ';
+  let best = null, bl = 0; for (const k in PRICE) if (n.includes(k) && k.length > bl){ best = k; bl = k.length; }
+  return best ? PRICE[best] : (CAT_P[c.cat] || 200);
+}
+function costOf(items){
+  const st = state.prefs.store || 'tesco', live = livePrices()[st] || {}, fresh = Date.now() - LIVE_DAYS*864e5;
+  const rows = items.map(x=>{ const l = live[normName(x.name)], k = packs(x.name);
+    return l && l.t > fresh ? {x, p:l.p*k, live:true, prod:l.prod, t:l.t} : {x, p:Math.round(typicalPence(x.name)*(STORE_X[st]||1))*k, live:false}; });
+  return {rows, total: rows.reduce((a,r)=>a+r.p, 0), live: rows.filter(r=>r.live).length};
+}
+const gbp = p => '£' + (p/100).toFixed(2);
+function sheetCost(){
+  const open = state.list.filter(x=>!x.done), c = costOf(open), store = storeName();
+  const ago = t => { const d = Math.floor((Date.now()-t)/864e5); return d < 1 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago'; };
+  openSheet(`${head('About ' + gbp(c.total) + ' at ' + store)}
+    <p class="note" style="margin-top:6px">${c.live === c.rows.length ? 'All prices checked live.' : c.live ? `${c.live} of ${c.rows.length} prices checked live, the rest are typical prices.` : 'Typical supermarket prices, adjusted for ' + esc(store) + '. Could be out by a few pounds.'}</p>
+    <div class="rows" style="margin-top:12px">${c.rows.map(r=>`<div class="row"><div class="m"><div class="n">${esc(r.x.name)}</div><div class="s">${r.live ? esc(r.prod || store) + ' · checked ' + ago(r.t) : 'typical price'}</div></div><span style="font-variant-numeric:tabular-nums;padding-right:4px">${gbp(r.p)}</span></div>`).join('')}</div>
+    ${hasGemini() ? `<div class="btns"><button class="btn pri" id="cLive">Check live prices at ${esc(store)}</button></div><p class="note" id="cMsg">Looks up today's prices on the web. Saved for ${LIVE_DAYS} days.</p>` : ''}
+    <p class="note">Change your shop in Settings → Kitchen &amp; list.</p>`, el=>{
+    const b = el.querySelector('#cLive'); if (!b) return;
+    b.onclick = async ()=>{ b.disabled = true; b.innerHTML = '<span class="spin"></span>Checking prices…';
+      try { await checkLive(open, t=>{ b.innerHTML = `<span class="spin"></span>${t}`; }); render(); sheetCost(); }
+      catch(e){ b.disabled = false; b.textContent = 'Try again'; el.querySelector('#cMsg').textContent = e && e.status===-2 ? 'Couldn’t read the prices that came back. Try again.' : /limit:|not set up/.test(e && e.message || '') ? aiErrMsg(e) : aiErrMsg(e) + ' Live prices use Google Search, which needs billing on the Gemini key.'; }
+    };
+  });
+}
+async function checkLive(items, prog){
+  const st = state.prefs.store || 'tesco', store = storeName(), list = items.slice(0, 40);
+  const prompt = `Search the web for today's prices at ${store} in the UK (their own grocery website) for this shopping list. For each item, pick the standard pack most shoppers would buy: the store's own mainstream range, not premium and not the value range. Use the price shown now; if there is a loyalty-card price (Clubcard, Nectar, More Card) use that and say so in "product". If a line asks for more than one pack (e.g. "2 x milk"), give the price of ONE pack.
+
+LIST:
+${list.map((x,i)=>`${i+1}. ${x.name}`).join('\n')}
+
+Reply with ONLY JSON, no other text: {"items":[{"n":1,"product":"${store} semi skimmed milk 2.27L","price":1.65}]}
+"n" is the list number, "product" is the exact product and pack size (under 60 characters), "price" is in pounds. Use null for price if you can't find it.`;
+  const j = await askJSON(prompt, {url:'search', kind:'other', onText:(t,th)=>{ if (prog) prog(t ? 'Adding it up…' : th ? 'Searching ' + store + '…' : 'Checking prices…'); }});
+  const all = livePrices(), m = all[st] = all[st] || {}; let n = 0;
+  (j.items||[]).forEach(r=>{ const x = list[(+r.n||0)-1], p = Math.round(parseFloat(r.price)*100); if (!x || !(p > 0 && p < 20000)) return;
+    m[normName(x.name)] = {p, prod: shortLine(String(r.product||''), 60), t: Date.now()}; n++; });
+  for (const k in m) if (m[k].t < Date.now() - 60*864e5) delete m[k];
+  try { localStorage.setItem(PRICES_LS, JSON.stringify(all)); } catch(e){}
+  if (!n) throw {status:-2};
+  return n;
+}
+
 const storeName = () => (STORES[state.prefs.store] || STORES.tesco)[0];
 function storeUrl(name){ return (STORES[state.prefs.store] || STORES.tesco)[1](encodeURIComponent(String(name).replace(/\s*\(.*?\)\s*/g,' ').trim())); }
 const ZX_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
@@ -1880,6 +1951,7 @@ function vList(){
   let h = pageTop('Shopping') + `<form id="lf" class="inrow"><input type="text" id="li" placeholder="Add something" autocomplete="off" enterkeyhint="done"><button class="btn pri" type="submit" aria-label="Add">Add</button></form>`;
   if (!state.list.length) return h + `<div class="empty"><p class="big">Nothing to buy</p><p>Things you run out of, and anything your dinners need, land here.</p></div>`;
   const groups = {}; open.forEach(x=>(groups[aisleOf(x.name)] = groups[aisleOf(x.name)] || []).push(x));
+  if (open.length){ const c = costOf(open); h += `<button class="cost" data-act="cost"><span>About <b>${gbp(c.total)}</b> at ${esc(storeName())}</span><small>${c.live === open.length ? 'live prices' : c.live ? 'some live prices' : 'estimate'} ›</small></button>`; }
   const row = x => `<div class="row ${x.done?'done':''}"><button class="tick" data-act="ltog" data-id="${x.id}" aria-label="${x.done?'Untick':'Tick'} ${esc(x.name)}"></button><button class="m" data-act="ltog" data-id="${x.id}" style="text-align:left"><div class="n">${esc(x.name)}</div>${x.reason && !x.done ? `<div class="s">${esc(x.reason)}</div>` : ''}</button>${x.done ? '' : `<a class="ib" href="${storeUrl(x.name)}" target="_blank" rel="noopener" aria-label="Find at ${esc(storeName())}" style="color:var(--mut)">${IC.ext}</a>`}</div>`;
   AISLES.filter(a=>groups[a]).forEach(a=>{ h += `<div class="sec"><h2>${a}</h2></div><div class="rows">${groups[a].map(row).join('')}</div>`; });
   if (done.length) h += `<div class="sec"><h2>In your basket · ${done.length}</h2><button class="lnk" data-act="lclear">Clear</button></div><div class="rows">${done.map(row).join('')}</div>
@@ -2092,6 +2164,7 @@ document.addEventListener('click', ev=>{
     planMissing().forEach(m=>{ if (!onList.has(normName(m.label)) && addToList(m.label, `${m.amt} · for ${m.r.n}`)) n++; }); save(); render(); toast(`Added ${plural(n,'thing')} to your list`); return; }
   if (a==='ltog'){ const x = state.list.find(y=>y.id===b.dataset.id); if (x){ x.done = !x.done; save(); render(); } return; }
   if (a==='lclear'){ snapUndo(); state.list = state.list.filter(x=>!x.done); save(); render(); toastUndo('Basket cleared'); return; }
+  if (a==='cost') return sheetCost();
   if (a==='lstore'){ const done = state.list.filter(x=>x.done); state.list = state.list.filter(x=>!x.done); save(); render(); sheetReview(done.map(x=>({name:x.name, qty:''}))); return; }
 });
 function sheetRecipeFromPlan(d, id){
