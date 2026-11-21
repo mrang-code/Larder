@@ -609,13 +609,14 @@ async function askAI(prompt, useUrl, image, onText, schema){
 }
 function aiErrMsg(e){
   if (!e) return 'Something went wrong. Try again.';
-  if (e.status===-1) return 'Add your free Gemini key in Preferences first.';
+  if (e.status===-1) return 'Add your Gemini key in Settings first.';
   if (e.status===-2 || e instanceof SyntaxError) return 'The AI sent back a reply the app couldn’t read. Try again.';
-  if (e.status===0) return navigator.onLine===false ? 'No internet connection.' : (e.message==='timeout' ? 'The AI took too long to answer. Try again, or switch to Flash-Lite in Preferences.' : 'Couldn’t connect to Gemini. Check your signal and try again.');
+  if (e.status===0) return navigator.onLine===false ? 'No internet connection.' : (e.message==='timeout' ? 'The AI took too long to answer. Try again, or switch to Flash-Lite in Settings.' : 'Couldn’t connect to Gemini. Check your signal and try again.');
   if (e.status===-4) return 'Gemini sent back an empty answer' + (e.message && e.message!=='empty' ? ' ('+e.message+')' : '') + '. Try again.';
-  if (e.status===400 && /api key/i.test(e.message||'')) return 'Your Gemini key was rejected. Check it in Preferences.';
-  if (e.status===403) return 'This key isn’t allowed to use Gemini. Check it in Preferences.';
-  if (e.status===429 || e.code==='rate_limited') return 'Free daily limit reached. It resets at 8am UK time.';
+  if (e.status===400 && /api key/i.test(e.message||'')) return 'Your Gemini key was rejected. Check it in Settings.';
+  if (e.status===403) return 'This key isn’t allowed to use Gemini. Check it in Settings.';
+  if (/prepay|depleted|billing/i.test(e.message||'')) return 'Google says your key’s project has no prepaid balance. In AI Studio → Billing, add a prepaid top-up (your monthly credits only apply after that), or use a free key from a project without billing.';
+  if (e.status===429 || e.code==='rate_limited') return 'Daily limit reached for this key. It resets at 8am UK time.';
   return 'Gemini error ' + (e.status||e.code||'') + (e.message ? ': ' + String(e.message).slice(0,140) : '') + '. Try again.';
 }
 function parseJSON(txt){
