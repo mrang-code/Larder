@@ -311,9 +311,13 @@ try { const raw = localStorage.getItem(LS); if (raw) state = normalize(JSON.pars
 let remote = null, syncMode = 'loading', writing=false, pending=false, saveT=null;
 let sampleFn = null, ai = {status:'idle', recipes:[], ask:'', err:''};
 const KEY_LS = 'larder-gemini';
-function getGem(){ try { return JSON.parse(localStorage.getItem(KEY_LS)||'{}'); } catch(e){ return {}; } }
-function setGem(g){ try { localStorage.setItem(KEY_LS, JSON.stringify(g)); } catch(e){} }
-const hasGemini = () => !!(getGem().key);
+const CFG_LS = 'larder-cfg', DEV_LS = 'larder-dev';
+function getCfg(){ try { return JSON.parse(localStorage.getItem(CFG_LS)||'null') || {}; } catch(e){ return {}; } }
+async function loadCfg(){ try { const r = await fetch(getServer() + '/config'); if (!r.ok) return; const c = await r.json(); const before = localStorage.getItem(CFG_LS); localStorage.setItem(CFG_LS, JSON.stringify(c)); if (before !== JSON.stringify(c) && typeof render==='function') render(); } catch(e){} }
+function devId(){ try { let d = localStorage.getItem(DEV_LS); if (!d){ d = uid() + uid(); localStorage.setItem(DEV_LS, d); } return d; } catch(e){ return 'nodevice0'; } }
+function getGem(){ const c = getCfg(); return {key: c.ai ? 'server' : '', model: c.model || 'gemini-3.5-flash', best: !!c.best}; }
+function setGem(){}
+const hasGemini = () => !!getCfg().ai;
 const aiAvailable = () => hasGemini() || !!sampleFn;
 const isUrl = s => /^https?:\/\/\S+$/i.test(String(s).trim());
 function hasData(s){ return s.items.length || s.spices.length || s.list.length; }
@@ -549,7 +553,7 @@ const ME_LS = 'larder-me';
 function getMe(){ try { const m = JSON.parse(localStorage.getItem(ME_LS)||'{}'); return {name:'', town:'', ...m, feat:{plan:true, diary:true, spices:true, ...(m.feat||{})}}; } catch(e){ return {name:'', town:'', feat:{plan:true, diary:true, spices:true}}; } }
 function setMe(m){ try { localStorage.setItem(ME_LS, JSON.stringify(m)); } catch(e){} }
 const portionsTxt = n => n > 0 ? fmtQty({n, d:'n', w:'portion'}) : 'none';
-let AI_BEST = false;
+let AI_BEST = false, AI_KIND = 'other', AI_AID = '';
 async function gemini(prompt, useUrl, image, onText, schema, onlyModel){
   const g = getGem(), first = AI_BEST && g.best ? 'gemini-4-argon' : (g.model||'gemini-3.5-flash');
   const models = onlyModel ? [onlyModel] : [first, g.model||'gemini-3.5-flash', ...(g.model==='gemini-3.8-flash' || g.best ? ['gemini-3.8-flash'] : []), 'gemini-3.5-flash', 'gemini-3.1-flash-lite'].filter((v,i,a)=>a.indexOf(v)===i);
@@ -567,6 +571,7 @@ async function gemini(prompt, useUrl, image, onText, schema, onlyModel){
     }
     if (res.text) return res.text;
     last = res.err;
+    if (/^limit:|not set up/.test(last.message||'')) break;
     if (![0,-4,403,404,429,500,503].includes(last.status) && !(last.status===400 && /billing|not (found|supported)|model/i.test(last.message||''))) break;
   }
   throw last;
@@ -575,7 +580,7 @@ async function geminiCall(m, body, onText){
   const g = getGem(); const ctl = new AbortController(); let timer = setTimeout(()=>ctl.abort(), 50000);
   const bump = () => { clearTimeout(timer); timer = setTimeout(()=>ctl.abort(), 50000); };
   let r;
-  try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:streamGenerateContent?alt=sse`, {method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':g.key}, body:JSON.stringify(body), signal:ctl.signal}); }
+  try { r = await fetch(getServer() + '/ai', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:m, body, kind:AI_KIND, aid:AI_AID || (AI_AID = uid() + uid()), dev:devId()}), signal:ctl.signal}); }
   catch(e){ clearTimeout(timer); return {err:{status:0, message: ctl.signal.aborted ? 'timeout' : 'network', model:m}}; }
   if (!r.ok){
     clearTimeout(timer);
@@ -609,12 +614,14 @@ async function askAI(prompt, useUrl, image, onText, schema){
 }
 function aiErrMsg(e){
   if (!e) return 'Something went wrong. Try again.';
-  if (e.status===-1) return 'Add your Gemini key in Settings first.';
+  if (e.status===-1) return 'AI isn’t set up yet.';
   if (e.status===-2 || e instanceof SyntaxError) return 'The AI sent back a reply the app couldn’t read. Try again.';
   if (e.status===0) return navigator.onLine===false ? 'No internet connection.' : (e.message==='timeout' ? 'The AI took too long to answer. Try again, or switch to Flash-Lite in Settings.' : 'Couldn’t connect to Gemini. Check your signal and try again.');
   if (e.status===-4) return 'Gemini sent back an empty answer' + (e.message && e.message!=='empty' ? ' ('+e.message+')' : '') + '. Try again.';
-  if (e.status===400 && /api key/i.test(e.message||'')) return 'Your Gemini key was rejected. Check it in Settings.';
-  if (e.status===403) return 'This key isn’t allowed to use Gemini. Check it in Settings.';
+  if (e.status===400 && /api key/i.test(e.message||'')) return 'The Gemini key on the server was rejected. The admin needs to check it.';
+  if (e.status===403) return 'The Gemini key on the server isn’t allowed to use this. The admin needs to check it.';
+  if (/^limit:/.test(e.message||'')){ const k = e.message.slice(6); return k==='photo' ? `That’s today’s ${LIMITS.photo} photos used. More tomorrow.` : k==='gen' ? `That’s today’s ${LIMITS.gen} AI recipes used. More tomorrow.` : 'AI has hit its daily limit for everyone. It resets tomorrow.'; }
+  if (/not set up/i.test(e.message||'')) return 'AI isn’t set up yet. The admin adds the Gemini key in Settings → Admin.';
   if (/prepay|depleted|billing/i.test(e.message||'')) return 'Google says your key’s project has no prepaid balance. In AI Studio → Billing, add a prepaid top-up (your monthly credits only apply after that), or use a free key from a project without billing.';
   if (e.status===429 || e.code==='rate_limited') return 'Daily limit reached for this key. It resets at 8am UK time.';
   return 'Gemini error ' + (e.status||e.code||'') + (e.message ? ': ' + String(e.message).slice(0,140) : '') + '. Try again.';
@@ -638,7 +645,7 @@ function parseJSON(txt){
   throw {status:-2};
 }
 async function askJSON(prompt, o){
-  o = o || {}; AI_BEST = !!o.best;
+  o = o || {}; AI_BEST = !!o.best; AI_KIND = o.kind || 'other'; AI_AID = uid() + uid();
   try { return parseJSON(await askAI(prompt, o.url, o.image, o.onText, o.schema)); }
   catch(e){
     if (!(e && (e.status===-2 || e instanceof SyntaxError))) throw e;
@@ -1000,7 +1007,8 @@ function closeScan(){
   return s;
 }
 const SRV_LS = 'larder-server', HH_LS = 'larder-hh';
-function getServer(){ try { return localStorage.getItem(SRV_LS) || getPush().url || ''; } catch(e){ return ''; } }
+const DEFAULT_SERVER = 'https://larder-reminders.mustafarangwalla.workers.dev';
+function getServer(){ try { return localStorage.getItem(SRV_LS) || DEFAULT_SERVER; } catch(e){ return DEFAULT_SERVER; } }
 function setServer(u){ try { localStorage.setItem(SRV_LS, u); } catch(e){} }
 function cleanServer(u){ u = String(u||'').trim().replace(/\/+$/, ''); if (!/^https:\/\/[^\s\/]+$/.test(u)) throw {msg:'url'}; return u; }
 // Checks the server from the app. (The server's front page can't be read from the app, so this asks
@@ -1381,7 +1389,9 @@ function sheetItem(id){
 
 /* adding food */
 /* ---------- daily AI limits (stop one phone running up the bill) ---------- */
-const LIMITS = {photo:5, gen:10}, USE_LS = 'larder-usage';
+const LIMITS = {}, USE_LS = 'larder-usage';
+Object.defineProperty(LIMITS, 'photo', {get(){ const l = getCfg().limits; return l && l.photo != null ? l.photo : 5; }});
+Object.defineProperty(LIMITS, 'gen', {get(){ const l = getCfg().limits; return l && l.gen != null ? l.gen : 10; }});
 function usage(){ try { const u = JSON.parse(localStorage.getItem(USE_LS)||'{}'); return u.d===iso(today()) ? u : {d:iso(today()), photo:0, gen:0}; } catch(e){ return {d:iso(today()), photo:0, gen:0}; } }
 const left = k => Math.max(0, LIMITS[k] - (usage()[k]||0));
 function spend(k){ const u = usage(); u[k] = (u[k]||0) + 1; try { localStorage.setItem(USE_LS, JSON.stringify(u)); } catch(e){} }
@@ -1410,7 +1420,7 @@ function sheetAdd(rows, note){
   const again = [...new Set(state.log.filter(x=>(x.t==='used'||x.t==='bin') && x.d >= addDays(-45)).reverse().map(x=>x.n))].filter(n=>!inK.has(normName(n))).slice(0, 12);
   openSheet(`${head('Add food')}
     <div class="tiles">
-      <label class="tile">${CAM}<b>Snap your shopping</b><span>${can ? `Bags, fridge or receipt · ${left('photo')} left today` : 'Turn on AI in Settings'}</span>${can ? '<input type="file" accept="image/*" id="aPhoto" hidden>' : ''}</label>
+      <label class="tile">${CAM}<b>Snap your shopping</b><span>${can ? `Bags, fridge or receipt · ${left('photo')} left today` : 'AI isn’t set up yet'}</span>${can ? '<input type="file" accept="image/*" id="aPhoto" hidden>' : ''}</label>
       <button class="tile" id="aScan">${BAR}<b>Scan barcodes</b><span>One after another</span></button>
     </div>
     <p class="note" id="aMsg">${note ? esc(note) : ''}</p>
@@ -1467,7 +1477,7 @@ List every food and drink item you can identify. For each:
 - "place": where it should be kept once home: "fridge", "freezer" or "cupboard". Frozen food goes in "freezer".
 - "days": whole days from today until its use-by or best-before. Read printed dates when you can see them; otherwise use typical UK shelf life for that food kept there, unopened (fresh chicken or mince 2, fish 2, milk 7, yogurt 10, eggs 21, cheddar 42, spinach 4, bread 5, bananas 5, potatoes 30, tins 700, rice or pasta 365, frozen food 180-240).
 Merge identical items into one line with a combined amount. Leave out non-food items, bags, prices and offers. If you can't see any food, return an empty list and put the reason in "error".
-Reply with ONLY JSON: {"items":[{"name":"Chicken breast","qty":"500g","place":"fridge","days":2}]}`, {image, schema:S_SHOP, best:true});
+Reply with ONLY JSON: {"items":[{"name":"Chicken breast","qty":"500g","place":"fridge","days":2}]}`, {image, schema:S_SHOP, best:true, kind:'photo'});
     const rows = (j.items||[]).map(x=>{ const name = cap(String(x.name||'').trim()); const loc = ['fridge','freezer','cupboard'].includes(String(x.place).toLowerCase()) ? String(x.place).toLowerCase() : classify(name).loc;
       const dd = Math.round(+x.days); return {name, qty:String(x.qty||'').trim(), loc, days: dd > 0 && dd < 1500 ? dd : null}; }).filter(x=>x.name);
     if (!rows.length){ if (msg) msg.textContent = j.error ? `Couldn’t see any food: ${j.error}` : 'Couldn’t see any food in that photo. Try one with the items spread out.'; return; }
@@ -1528,7 +1538,7 @@ function recSub(e){
 const needName = l => stripAmt(l).replace(/^(tbsp|tsp|tablespoons?|teaspoons?|g|kg|ml|l|tins?|cans?|cloves?|handful|pinch|of)\b\s*/gi,'').replace(/^(of)\s+/i,'').toLowerCase();
 function vCook(){
   let h = pageTop('Cook');
-  h += `<button class="hero" data-act="cooknow"><b>Cook something now</b><span>${aiAvailable() ? `A recipe written for you from what’s in your kitchen · ${left('gen')} left today` : 'Add your free Gemini key in Settings to turn this on'}</span></button>`;
+  h += `<button class="hero" data-act="cooknow"><b>Cook something now</b><span>${aiAvailable() ? `A recipe written for you from what’s in your kitchen · ${left('gen')} left today` : 'AI isn’t set up yet'}</span></button>`;
   const lo = state.items.filter(it=>it.left && daysLeft(it) >= 0);
   if (lo.length) h += `<div class="sec"><h2>Leftovers to eat</h2></div><div class="rows">${lo.map(it=>`<button class="row" data-act="item" data-id="${it.id}"><div class="m"><div class="n">${esc(it.name.replace(/^Leftover /,''))}</div><div class="s">${esc([it.qty, dueLong(daysLeft(it))].filter(Boolean).join(' · '))}</div></div><span class="chev">›</span></button>`).join('')}</div>`;
   const s = slotNow(), evs = pool().filter(r=>slotOk(r, s) || (s==='l' && slotOk(r,'d'))).map(r=>evalRecipe(r));
@@ -1633,7 +1643,7 @@ STRICT RULE: every ingredient must be in the KITCHEN or SPICES list. Salt, peppe
 Reply with ONLY JSON: {"recipes":[{"name":"","servings":${ppl},"time":25,"protein":35,"kcal":550,"tags":[],"equipment":["hob"],"why":"","ingredients":[{"label":"300g chicken breast","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}]}
 ${JSON_RULES}`;
   if (left('gen') <= 0) return 0;
-  const j = await askJSON(prompt, {schema:S_IDEAS, best:true}); spend('gen');
+  const j = await askJSON(prompt, {schema:S_IDEAS, best:true, kind:'gen'}); spend('gen');
   const names = new Set(allRecipes().map(r=>normName(r.n))); let added = 0;
   (j.recipes||[]).slice(0,4).forEach(o=>{ const r = toRecipe(o, 'ai'); r.meal = 'Dinner'; if (!r.serves) r.serves = ppl;
     r.i = r.i.filter(x=>!(x[2] && !matchIng(x[1], {}) && !rackFor(x[1])));
@@ -1709,7 +1719,7 @@ function sheetBrowse(q){
 function sheetImport(){
   openSheet(`${head('Add a recipe', 'Paste a link or the recipe text, or take a photo of a recipe.')}
     <textarea id="imIn" placeholder="https://… or paste the recipe" style="margin-top:12px"></textarea>
-    <p class="note" id="imStatus">${aiAvailable() ? '' : 'Needs your free Gemini key in Settings.'}</p>
+    <p class="note" id="imStatus">${aiAvailable() ? '' : 'AI isn’t set up yet.'}</p>
     <div class="btns"><label class="btn" style="cursor:pointer">Photo<input type="file" accept="image/*" id="imPhoto" hidden></label><button class="btn pri" id="imGo">Add</button></div>`, el=>{
     el.querySelector('#imGo').onclick = ()=>runImport(el.querySelector('#imIn').value, el);
     el.querySelector('#imPhoto').onchange = async ev=>{ const f = ev.target.files[0]; if (!f) return; try { runImport('', el, await fileToJpeg(f)); } catch(e){ el.querySelector('#imStatus').textContent = 'Couldn’t open that photo.'; } };
@@ -1724,7 +1734,7 @@ async function runImport(input, el, image){
 {"name":"","servings":4,"time":30,"protein":30,"tags":[],"equipment":["hob"],"ingredients":[{"label":"500g chicken thighs","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}
 ${JSON_RULES} Write the steps as short, clear instructions in your own words, keeping amounts, times and temperatures. If there is no recipe, or you cannot open the page, reply {"error":"short reason"}.`;
   try {
-    const j = await askJSON(prompt, {url, image, schema:S_RECIPE, best:true}); spend(image ? 'photo' : 'gen');
+    const j = await askJSON(prompt, {url, image, schema:S_RECIPE, best:true, kind: image ? 'photo' : 'gen'}); spend(image ? 'photo' : 'gen');
     if (j.error || !(j.ingredients||[]).length) throw {status:-3};
     const r = toRecipe({...j, source: url ? input : ''}, 'import'); state.saved.unshift(r); save(); closeSheet(); tab = 'cook'; render(); sheetRecipe(r.id); toast('Added to your cookbook');
   } catch(e){
@@ -1776,7 +1786,7 @@ ${mealRule(meal)}${meal==='Snack' ? ' A snack is one small, quick bite.' : ''}
 "servings" is ${ppl}; realistic UK portions; each ingredient label starts with the amount for all servings, e.g. "300g chicken breast", "1 pepper". Never use more than the kitchen has. Write clear numbered steps a beginner can follow, one action per step, with heat levels, times and how to tell it's done. "time" is your honest total.
 Reply with ONLY JSON: {"recipes":[{"name":"","servings":${ppl},"time":25,"protein":35,"kcal":550,"tags":[],"equipment":["hob"],"why":"one short line on what it uses up","ingredients":[{"label":"300g chicken breast","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}]}
 ${JSON_RULES}`;
-  const j = await askJSON(prompt, {schema:S_IDEAS, best:true, onText:(t,th)=>{ if (prog) prog(/"steps"/.test(t) ? 'Writing the steps…' : /"name"/.test(t) ? 'Choosing ingredients…' : th ? 'Thinking about what you have…' : 'Writing your recipe…'); }});
+  const j = await askJSON(prompt, {schema:S_IDEAS, best:true, kind:'gen', onText:(t,th)=>{ if (prog) prog(/"steps"/.test(t) ? 'Writing the steps…' : /"name"/.test(t) ? 'Choosing ingredients…' : th ? 'Thinking about what you have…' : 'Writing your recipe…'); }});
   const rs = (j.recipes||[]).map(x=>{ const r = toRecipe(x, 'ai'); r.meal = meal; if (!r.serves) r.serves = ppl; return r; }).filter(r=>goodRecipe(r, meal));
   for (const r of rs){
     if (o.strict){ r.i = r.i.filter(x=>!(x[2] && !matchIng(x[1], {}) && !rackFor(x[1]))); if (evalRecipe(r).missing.length) continue; }
@@ -1878,16 +1888,9 @@ function sheetSettings(focus){
       <label class="f">Where you shop</label><select id="sStore">${Object.entries(STORES).map(([k,v])=>`<option value="${k}" ${(p.store||'tesco')===k?'selected':''}>${v[0]}</option>`).join('')}</select>
     </div></details>
     <details ${focus==='ai'?'open':''} id="aiSec"><summary>AI</summary><div>
-      <p class="note" style="margin-top:0">Powers photo logging, recipe writing and imports. Get a free key at aistudio.google.com → Get API key. It stays on this phone.</p>
-      <label class="f">Gemini API key</label><input type="password" id="gKey" value="${esc(g.key||'')}" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
-      <label class="f">Everyday model</label><select id="gModel">${[['gemini-3.8-flash','Gemini 3.8 Flash — best with billing on'],['gemini-3.5-flash','Gemini 3.5 Flash — free'],['gemini-3.1-flash-lite','Gemini 3.1 Flash-Lite — free, fastest']].map(([v,l])=>`<option value="${v}" ${(g.model||'gemini-3.5-flash')===v?'selected':''}>${l}</option>`).join('')}</select>
-      <button class="tog ${g.best?'on':''}" id="gBest"><span>Gemini 4 Argon for recipes and photos<small>Google’s best model. Slower, and roughly 5–10p each with billing on</small></span><i></i></button>
-      <p class="note">Daily limits: ${LIMITS.photo} photos and ${LIMITS.gen} AI recipes. ${left('photo')} photos and ${left('gen')} recipes left today.</p>
-      <div class="btns"><button class="btn" id="gTest">Save and test</button></div><p class="note" id="gStatus"></p>
+      <p class="note" style="margin-top:0">${hasGemini() ? `On. Photos and recipe writing are set up for everyone. Today you have ${left('photo')} of ${LIMITS.photo} photos and ${left('gen')} of ${LIMITS.gen} AI recipes left.` : 'Not set up yet. The admin turns it on in Settings → Admin.'}</p>
     </div></details>
     <details ${focus==='hh'?'open':''}><summary>Reminders &amp; sharing</summary><div>
-      <p class="note" style="margin-top:0">Both use your free Cloudflare server from the setup guide.</p>
-      <label class="f">Server address</label><div class="inrow"><input type="text" id="sUrl" value="${esc(srv)}" placeholder="https://larder-reminders….workers.dev" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url"><button class="btn" id="sSave">Save</button></div><p class="note" id="sStatus"></p>
       <label class="f">Expiry reminders at</label><select id="nHour">${[[8,'8am'],[12,'Midday'],[17,'5pm'],[19,'7pm']].map(([v,l])=>`<option value="${v}" ${(pu.hour||17)===v?'selected':''}>${l}</option>`).join('')}</select>
       <div class="btns"><button class="btn" id="nOn">${pu.on?'Update':'Turn on'}</button>${pu.on?'<button class="btn" id="nTest">Test</button><button class="btn bad" id="nOff">Off</button>':''}</div><p class="note" id="nStatus">${pu.on?'Reminders are on.':''}</p>
       <label class="f">Shared kitchen</label>
@@ -1900,6 +1903,10 @@ function sheetSettings(focus){
       <div class="btns"><button class="btn" id="pBackup">Backup</button><label class="btn" style="cursor:pointer">Restore<input type="file" id="pRestore" accept="application/json,.json" hidden></label></div>
       <div class="btns" style="margin-top:8px"><button class="btn" id="pSample">Sample kitchen</button><button class="btn bad" id="pReset">Clear all</button></div><div id="pConfirm"></div>
     </div></details>
+    <details ${focus==='admin'?'open':''} id="adSec"><summary>Admin</summary><div id="adBox">
+      <p class="note" style="margin-top:0">For the person who runs Larder. Changes here apply to every phone.</p>
+      <div class="inrow"><input type="password" id="adCode" placeholder="Admin code" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" id="adGo">Unlock</button></div><p class="note" id="adMsg"></p>
+    </div></details>
     <div class="btns"><button class="btn pri" id="pSave">Done</button></div>`, el=>{
     const d = {...p, goals:[...(p.goals||[])], appliances:[...p.appliances]};
     const one = (sel, k, num) => el.querySelectorAll(sel).forEach(b=>b.onclick=()=>{ d[k] = num ? +b.dataset[Object.keys(b.dataset)[0]] : b.dataset[Object.keys(b.dataset)[0]]; el.querySelectorAll(sel).forEach(x=>x.classList.toggle('on', x===b)); });
@@ -1908,20 +1915,17 @@ function sheetSettings(focus){
     el.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>{ const k = b.dataset.ap, i = d.appliances.indexOf(k); if (i>=0) d.appliances.splice(i,1); else d.appliances.push(k); b.classList.toggle('on', i<0); });
     el.querySelector('#sHp').onclick = ev=>{ const i = d.goals.indexOf('hp'); if (i>=0) d.goals.splice(i,1); else d.goals.push('hp'); ev.currentTarget.classList.toggle('on', i<0); };
     el.querySelector('#sAuto').onclick = ev=>{ d.autoList = !d.autoList; ev.currentTarget.classList.toggle('on', d.autoList); };
-    let gBest = !!g.best; el.querySelector('#gBest').onclick = ev=>{ gBest = !gBest; ev.currentTarget.classList.toggle('on', gBest); };
-    const commit = ()=>{ d.dislikes = el.querySelector('#sDis').value; d.store = el.querySelector('#sStore').value; state.prefs = {...state.prefs, ...d}; setGem({key:el.querySelector('#gKey').value.trim(), model:el.querySelector('#gModel').value, best:gBest}); sweep(); save(); };
+    const commit = ()=>{ d.dislikes = el.querySelector('#sDis').value; d.store = el.querySelector('#sStore').value; state.prefs = {...state.prefs, ...d}; sweep(); save(); };
     el.querySelector('#pSave').onclick = ()=>{ commit(); closeSheet(); render(); };
-    el.querySelector('#gTest').onclick = async ()=>{ commit(); const st = el.querySelector('#gStatus'); if (!getGem().key){ st.textContent = 'Key removed.'; return; }
-      st.innerHTML = '<span class="spin"></span>Testing…'; try { parseJSON(await gemini('Reply with this JSON only: {"ok":true}', false)); st.textContent = '✓ Key works.'; } catch(e){ st.textContent = aiErrMsg(e); } };
-    const ss = el.querySelector('#sStatus'), saveSrv = async ()=>{ const u = cleanServer(el.querySelector('#sUrl').value); const c = await checkServer(u); setServer(u); return c; };
-    el.querySelector('#sSave').onclick = async ()=>{ ss.innerHTML = '<span class="spin"></span>Checking…'; try { const c = await saveSrv(); ss.textContent = c.storage ? '✓ Connected.' : 'Connected, but storage isn’t linked yet — see step 5 of the server setup.'; } catch(e){ ss.textContent = e.msg==='url' ? 'Paste the https:// address, with nothing after it.' : 'Couldn’t reach a Larder server there.'; } };
+    const saveSrv = async ()=>checkServer(getServer());
+    el.querySelector('#adGo').onclick = ()=>adminUnlock(el);
     const ns = el.querySelector('#nStatus');
     el.querySelector('#nOn').onclick = async ()=>{ ns.innerHTML = '<span class="spin"></span>Setting up…'; try { await saveSrv(); await enablePush(+el.querySelector('#nHour').value); ns.textContent = '✓ Reminders are on.'; } catch(e){ ns.textContent = pushErr(e); } };
     const nt = el.querySelector('#nTest'); if (nt) nt.onclick = async ()=>{ ns.innerHTML = '<span class="spin"></span>Sending…'; try { const reg = await swReady(), sub = await reg.pushManager.getSubscription(); if (!sub) throw {msg:'nosub'}; const r = await postPush('/test', {endpoint:sub.endpoint}); ns.textContent = r.ok ? 'Sent. Lock your phone to see it.' : 'Couldn’t send.'; } catch(e){ ns.textContent = pushErr(e); } };
     const nf = el.querySelector('#nOff'); if (nf) nf.onclick = async ()=>{ await disablePush(); ns.textContent = 'Reminders are off.'; nf.remove(); };
     const hs = el.querySelector('#hStatus');
     const hNew = el.querySelector('#hNew'); if (hNew) hNew.onclick = async ()=>{ hs.innerHTML = '<span class="spin"></span>Setting up…';
-      try { const u = cleanServer(el.querySelector('#sUrl').value); await checkServer(u); setServer(u); const j = await hhCall('/hh/new', {state:shareable(state)}, u); setHH({url:u, id:j.id, secret:j.secret}); hhLast = Date.now(); sheetSettings('hh'); toast('Shared kitchen started'); } catch(e){ hs.textContent = hhErrText(e.msg); } };
+      try { const u = getServer(); const j = await hhCall('/hh/new', {state:shareable(state)}, u); setHH({url:u, id:j.id, secret:j.secret}); hhLast = Date.now(); sheetSettings('hh'); toast('Shared kitchen started'); } catch(e){ hs.textContent = hhErrText(e.msg); } };
     const hJoin = el.querySelector('#hJoin'); if (hJoin) hJoin.onclick = async ()=>{ const inv = readInvite(el.querySelector('#hCode').value); if (!inv){ hs.textContent = 'That doesn’t look like an invite code.'; return; }
       hs.innerHTML = '<span class="spin"></span>Joining…'; try { let j; for (let t = 0; ; t++){ try { j = await hhCall('/hh/sync', {id:inv.id, secret:inv.secret}, inv.url); break; } catch(e){ if (e.msg!=='nohh' || t >= 7) throw e; hs.innerHTML = '<span class="spin"></span>Waiting for the new kitchen to reach this phone…'; await new Promise(r=>setTimeout(r, 10000)); } } if (!getServer()) setServer(inv.url); sheetJoin(j.state||{}, inv); } catch(e){ hs.textContent = hhErrText(e.msg); } };
     const hShare = el.querySelector('#hShare'); if (hShare) hShare.onclick = async ()=>{ const code = inviteCode(hh), text = `Join my Larder kitchen: open Larder → Settings → Reminders & sharing, and paste this code:\n\n${code}`;
@@ -1935,9 +1939,35 @@ function sheetSettings(focus){
     el.querySelector('#pReset').onclick = ()=>{ el.querySelector('#pConfirm').innerHTML = `<p class="note">${getHH() ? 'This clears it for everyone sharing your kitchen.' : 'This can’t be undone.'}</p><div class="btns"><button class="btn" id="cNo">Keep</button><button class="btn bad" id="cYes">Clear everything</button></div>`;
       el.querySelector('#cNo').onclick = ()=>el.querySelector('#pConfirm').innerHTML = '';
       el.querySelector('#cYes').onclick = ()=>{ const prefs = state.prefs; state = {...blank(), del:state.del, planU:state.planU}; state.prefs = prefs; save(); closeSheet(); tab = 'kitchen'; render(); toast('All cleared'); }; };
-    if (focus==='ai') setTimeout(()=>{ el.querySelector('#aiSec').scrollIntoView({block:'start'}); el.querySelector('#gKey').focus(); }, 280);
+    if (focus==='ai') setTimeout(()=>{ el.querySelector('#aiSec').scrollIntoView({block:'start'}); }, 280);
     renderSync();
   });
+}
+async function adminCall(path, body){
+  let r; try { r = await fetch(getServer() + path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); } catch(e){ throw 'Couldn’t reach the server.'; }
+  const j = await r.json().catch(()=>({})); if (!r.ok) throw (j.error || 'Something went wrong.'); return j;
+}
+async function adminUnlock(el){
+  const code = el.querySelector('#adCode').value, msg = el.querySelector('#adMsg'); if (!code) return;
+  msg.innerHTML = '<span class="spin"></span>Checking…';
+  let j; try { j = await adminCall('/admin/get', {code}); } catch(e){ msg.textContent = e; return; }
+  const c = j.cfg, box = el.querySelector('#adBox');
+  box.innerHTML = `<p class="note" style="margin-top:0">✓ Unlocked. ${j.today} AI ${j.today===1?'action':'actions'} used today across all phones.</p>
+    <label class="f">Gemini API key ${c.keyEnd ? `<span class="mut">· now ending ${esc(c.keyEnd)}</span>` : '<span class="mut">· none yet</span>'}</label><input type="password" id="adKey" placeholder="${c.keyEnd ? 'Leave empty to keep it' : 'AIza…'}" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <label class="f">Everyday model</label><select id="adModel">${[['gemini-3.8-flash','Gemini 3.8 Flash (needs billing)'],['gemini-3.5-flash','Gemini 3.5 Flash (free)'],['gemini-3.1-flash-lite','Gemini 3.1 Flash-Lite (free, fastest)']].map(([v,l])=>`<option value="${v}" ${c.model===v?'selected':''}>${l}</option>`).join('')}</select>
+    <button class="tog ${c.best?'on':''}" id="adBest"><span>Gemini 4 Argon for recipes and photos<small>Best quality, slower, needs billing</small></span><i></i></button>
+    <label class="f">Daily limits per phone: photos and AI recipes</label><div class="inrow"><input type="number" id="adPh" value="${c.limits.photo}" min="0"><input type="number" id="adGen" value="${c.limits.gen}" min="0"></div>
+    <label class="f">Daily limit for everyone together (AI actions)</label><input type="number" id="adTot" value="${c.limits.total}" min="0">
+    <label class="f">New admin code (optional)</label><input type="password" id="adNew" placeholder="Leave empty to keep it" autocomplete="off">
+    <div class="btns"><button class="btn pri" id="adSave">Save for everyone</button><button class="btn" id="adTest">Test AI</button></div><p class="note" id="adMsg2"></p>`;
+  let best = !!c.best; box.querySelector('#adBest').onclick = ev=>{ best = !best; ev.currentTarget.classList.toggle('on', best); };
+  const m2 = box.querySelector('#adMsg2');
+  box.querySelector('#adSave').onclick = async ()=>{ m2.innerHTML = '<span class="spin"></span>Saving…';
+    const set = {model:box.querySelector('#adModel').value, best, limits:{photo:+box.querySelector('#adPh').value, gen:+box.querySelector('#adGen').value, total:+box.querySelector('#adTot').value}};
+    const k = box.querySelector('#adKey').value.trim(); if (k) set.key = k; const nc = box.querySelector('#adNew').value; if (nc){ if (nc.length < 6){ m2.textContent = 'The new code needs at least 6 characters.'; return; } set.newCode = nc; }
+    try { await adminCall('/admin/config', {code, set}); await loadCfg(); m2.textContent = '✓ Saved. Every phone picks this up the next time it opens Larder.'; box.querySelector('#adKey').value = ''; } catch(e){ m2.textContent = e; } };
+  box.querySelector('#adTest').onclick = async ()=>{ m2.innerHTML = '<span class="spin"></span>Testing…'; await loadCfg();
+    try { parseJSON(await gemini('Reply with this JSON only: {"ok":true}', false)); m2.textContent = '✓ AI works.'; } catch(e){ m2.textContent = aiErrMsg(e); } };
 }
 function sheetJoin(remote, hh){
   openSheet(`${head('Join shared kitchen', `It has ${plural(remote.items ? remote.items.length : 0,'item')}. You have ${state.items.length} on this phone.`)}
@@ -2067,13 +2097,13 @@ if (!state.prefs.v2){   // Larder 2: dinners-only week, no food diary
 }
 snapMap = recMap(state);
 sweep(); save(); render();
-initRemote(); initSample();
+initRemote(); initSample(); loadCfg();
 if ('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 mirrorNotify(); setTimeout(syncPush, 1500);
 if (!state.prefs.onboarded) openOnb();
 if (getHH()) setTimeout(hhSync, 800);
 setInterval(()=>{ if (!document.hidden && getHH()) hhSync(); }, 45000);
-document.addEventListener('visibilitychange', ()=>{ if (!document.hidden){ if (getHH()) hhSync(); if (sweep()){ save(); render(); } } });
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden){ loadCfg(); if (getHH()) hhSync(); if (sweep()){ save(); render(); } } });
 
 </script>
 </body>
