@@ -565,11 +565,16 @@ const portionsTxt = n => n > 0 ? fmtQty({n, d:'n', w:'portion'}) : 'none';
 let AI_BEST = false, AI_KIND = 'other', AI_AID = '';
 async function gemini(prompt, useUrl, image, onText, schema, onlyModel){
   const g = getGem(), first = AI_BEST && g.best ? 'gemini-4-argon' : (g.model||'gemini-3.5-flash');
-  const models = onlyModel ? [onlyModel] : [first, g.model||'gemini-3.5-flash', ...(g.model==='gemini-3.8-flash' || g.best ? ['gemini-3.8-flash'] : []), 'gemini-3.5-flash', 'gemini-3.1-flash-lite'].filter((v,i,a)=>a.indexOf(v)===i);
+  // Photos go to Flash-Lite first: it reads a photo in a few seconds, while the free 3.5 Flash can take over a
+  // minute, and iPhones drop a request that gets no reply for about 60 seconds.
+  const models = onlyModel ? [onlyModel] : image ? ['gemini-3.1-flash-lite', 'gemini-3.5-flash']
+    : [first, g.model||'gemini-3.5-flash', ...(g.model==='gemini-3.8-flash' || g.best ? ['gemini-3.8-flash'] : []), 'gemini-3.5-flash', 'gemini-3.1-flash-lite'].filter((v,i,a)=>a.indexOf(v)===i);
   let last = {status:0, message:'No response'};
   for (const m of models){
     const parts = image ? [{inline_data:{mime_type:'image/jpeg', data:image}}, {text:prompt}] : [{text:prompt}];
-    const body = {contents:[{role:'user', parts}], generationConfig:{thinkingConfig:{includeThoughts:true}, maxOutputTokens:12000}};
+    // The free models think for a long time by default; keep it short so answers come back in seconds, not minutes.
+    const tc = m==='gemini-3.1-flash-lite' ? {thinkingLevel:'minimal'} : m==='gemini-3.5-flash' ? {includeThoughts:true, thinkingLevel:'low'} : {includeThoughts:true};
+    const body = {contents:[{role:'user', parts}], generationConfig:{thinkingConfig:tc, maxOutputTokens:12000}};
     if (useUrl === 'search') body.tools = [{google_search:{}}];
     else if (useUrl) body.tools = [{url_context:{}}];
     else { body.generationConfig.responseMimeType = 'application/json'; if (schema) body.generationConfig.responseSchema = schema; }
@@ -739,7 +744,7 @@ function canCook(r){ const mine = state.prefs.appliances; return eqOf(r).every(x
 function mySpecial(){ return SPECIAL.filter(k=>state.prefs.appliances.includes(k)); }
 function applLine(){ return state.prefs.appliances.map(applName).join(', ') || 'Hob'; }
 function fileToJpeg(file, max){
-  max = max || 1600;
+  max = max || 1400;
   return new Promise((res, rej)=>{
     const url = URL.createObjectURL(file); const img = new Image();
     img.onload = () => { try {
