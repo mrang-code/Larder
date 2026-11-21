@@ -924,7 +924,8 @@ const STORES = {
   asda:['Asda', q=>`https://www.asda.com/groceries/search/${q}`],
   morrisons:['Morrisons', q=>`https://groceries.morrisons.com/search?entry=${q}`],
   waitrose:['Waitrose', q=>`https://www.waitrose.com/ecom/shop/search?searchTerm=${q}`],
-  aldi:['Aldi', q=>`https://www.aldi.co.uk/search?text=${q}`]
+  aldi:['Aldi', q=>`https://www.aldi.co.uk/search?text=${q}`],
+  lidl:['Lidl', q=>`https://www.lidl.co.uk/q/search?q=${q}`]
 };
 
 /* ---------- shopping cost ---------- */
@@ -941,67 +942,57 @@ const PRICE = {milk:165,'oat milk':180,'almond milk':165,'soya milk':150,butter:
   'ice cream':300,chips:225,pizza:300,'frozen veg':150,'frozen pea':125,
   'toilet roll':450,'kitchen roll':300,'washing up liquid':150,'bin bag':200,foil:200,'cling film':150};
 const CAT_P = {Veg:100, Herbs:85, Fruit:150, Meat:450, Fish:400, 'Dairy & eggs':180, Chilled:250, Bakery:140, Cupboard:150, Drinks:180, Frozen:250};
-const STORE_X = {tesco:1, sainsburys:1.03, asda:0.95, morrisons:1.01, ocado:1.06, waitrose:1.2, aldi:0.84};
-const PRICES_LS = 'larder-prices', LIVE_DAYS = 14, CHK_LS = 'larder-price-chk';
+const STORE_X = {tesco:1, sainsburys:1.03, asda:0.95, morrisons:1.01, ocado:1.06, waitrose:1.2, aldi:0.84, lidl:0.85};
 const SMALL_X = 1.1;      // Express / Local / little shops charge about 10% more than big stores and the website
-function priceChk(){ try { return JSON.parse(localStorage.getItem(CHK_LS)||'{}'); } catch(e){ return {}; } }
-function nextLiveCheck(){ const c = priceChk(); return c.done && Date.now() - c.t < 7*864e5 ? c.t + 7*864e5 : 0; }
-function livePrices(){ try { return JSON.parse(localStorage.getItem(PRICES_LS)||'{}'); } catch(e){ return {}; } }
 function packs(name){ const m = String(name).match(/^\s*(\d+)\s*[x×]\s+|\s[x×]\s*(\d+)\s*$/i); return m ? Math.min(20, +(m[1]||m[2])) : 1; }
-function typicalPence(name){
-  const c = classify(name); if (c.spice) return 110;
+function priceKey(name){
   const n = ' ' + String(name).toLowerCase().replace(/[’']/g,'').replace(/\(.*?\)/g,' ') + ' ';
   let best = null, bl = 0; for (const k in PRICE) if (n.includes(k) && k.length > bl){ best = k; bl = k.length; }
-  return best ? PRICE[best] : (CAT_P[c.cat] || 200);
+  return best;
+}
+function typicalPence(name){
+  const c = classify(name); if (c.spice) return 110;
+  const k = priceKey(name); return k ? PRICE[k] : (CAT_P[c.cat] || 200);
+}
+// Shared prices: collected every Monday from Tesco, Sainsbury's and Morrisons, with other shops scaled by
+// Which?'s monthly supermarket comparison. Published as prices.json next to the app.
+const SHARED_LS = 'larder-shared-prices';
+function sharedPrices(){ try { const j = JSON.parse(localStorage.getItem(SHARED_LS)||'null'); return j && j.updated && Date.now() - new Date(j.updated) < 35*864e5 ? j : null; } catch(e){ return null; } }
+async function loadPrices(){
+  try { const r = await fetch('prices.json?v=' + Math.floor(Date.now()/36e5), {cache:'no-store'}); if (!r.ok) return;
+    const j = await r.json(); if (!j || !j.items) return; const old = sharedPrices();
+    localStorage.setItem(SHARED_LS, JSON.stringify(j)); if (!old || old.updated !== j.updated) render(); } catch(e){}
+}
+function shopPrice(key, st){
+  const sp = sharedPrices(); if (!sp || !key) return null; const per = (sp.items||{})[key], f = sp.factors || {};
+  if (!per) return null;
+  const at = e => e.l || e.p;
+  if (per[st]) return {p: at(per[st]), prod: per[st].prod, loyalty: !!per[st].l, direct: true};
+  if (!f[st]) return null;
+  const base = Object.keys(per).filter(s=>f[s]).map(s=>at(per[s]) / f[s]);       // what it'd cost at Tesco's level
+  if (!base.length) return null;
+  return {p: Math.round(base.reduce((a,b)=>a+b,0) / base.length * f[st]), direct: false};
 }
 function costOf(items){
-  const st = state.prefs.store || 'tesco', live = livePrices()[st] || {}, fresh = Date.now() - LIVE_DAYS*864e5;
-  const rows = items.map(x=>{ const l = live[normName(x.name)], k = packs(x.name);
-    const sx = state.prefs.small ? SMALL_X : 1;
-    return l && l.t > fresh ? {x, p:Math.round(l.p*sx)*k, live:true, prod:l.prod, t:l.t} : {x, p:Math.round(typicalPence(x.name)*(STORE_X[st]||1)*sx)*k, live:false}; });
-  return {rows, total: rows.reduce((a,r)=>a+r.p, 0), live: rows.filter(r=>r.live).length};
+  const st = state.prefs.store || 'tesco', sx = state.prefs.small ? SMALL_X : 1;
+  const rows = items.map(x=>{ const k = packs(x.name), sp = shopPrice(priceKey(x.name), st);
+    return sp ? {x, p:Math.round(sp.p*sx)*k, shared:true, direct:sp.direct, prod:sp.prod, loyalty:sp.loyalty} : {x, p:Math.round(typicalPence(x.name)*(STORE_X[st]||1)*sx)*k, shared:false}; });
+  return {rows, total: rows.reduce((a,r)=>a+r.p, 0), live: rows.filter(r=>r.shared).length};
 }
 const gbp = p => '£' + (p/100).toFixed(2);
 function sheetCost(){
-  const open = state.list.filter(x=>!x.done), c = costOf(open), store = storeName();
-  const ago = t => { const d = Math.floor((Date.now()-t)/864e5); return d < 1 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago'; };
+  const open = state.list.filter(x=>!x.done), c = costOf(open), store = storeName(), sp = sharedPrices();
+  const when = sp && sp.updated ? new Date(sp.updated + 'T12:00').toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'}) : '';
+  const loyal = {tesco:'Clubcard price', sainsburys:'Nectar price', morrisons:'More Card price'}[state.prefs.store||'tesco'] || 'member price';
+  const sub = r => !r.shared ? 'typical price' : r.direct ? esc(r.prod || store) + (r.loyalty ? ' · ' + loyal : '') : 'scaled from other shops’ prices';
   openSheet(`${head('About ' + gbp(c.total) + ' at ' + store)}
-    <p class="note" style="margin-top:6px">${c.live === c.rows.length ? 'All prices checked live.' : c.live ? `${c.live} of ${c.rows.length} prices checked live, the rest are typical prices.` : 'Typical supermarket prices, adjusted for ' + esc(store) + '. Could be out by a few pounds.'}</p>
-    <div class="rows" style="margin-top:12px">${c.rows.map(r=>`<div class="row"><div class="m"><div class="n">${esc(r.x.name)}</div><div class="s">${r.live ? esc(r.prod || store) + ' · checked ' + ago(r.t) : 'typical price'}</div></div><span style="font-variant-numeric:tabular-nums;padding-right:4px">${gbp(r.p)}</span></div>`).join('')}</div>
+    <p class="note" style="margin-top:6px">${c.live ? `${c.live} of ${c.rows.length} prices from this week’s price check${when ? ' (' + when + ')' : ''}${c.live < c.rows.length ? ', the rest are typical prices' : ''}.` : 'Typical supermarket prices, adjusted for ' + esc(store) + '. Could be out by a few pounds.'}</p>
+    <div class="rows" style="margin-top:12px">${c.rows.map(r=>`<div class="row"><div class="m"><div class="n">${esc(r.x.name)}</div><div class="s">${sub(r)}</div></div><span style="font-variant-numeric:tabular-nums;padding-right:4px">${gbp(r.p)}</span></div>`).join('')}</div>
     <label class="f">Where you'll buy it</label><div class="seg" id="cSmall"><button class="${state.prefs.small?'':'on'}" data-v="0">Big store or online</button><button class="${state.prefs.small?'on':''}" data-v="1">Express / Local</button></div>
     <p class="note" style="margin-top:6px">Big supermarkets charge the same in store as on their website. Express and Local shops are about 10% dearer. Delivery charges aren't included.</p>
-    ${hasGemini() ? (nextLiveCheck() ? `<div class="btns"><button class="btn" disabled>Next live check ${new Date(nextLiveCheck()).toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'short'})}</button></div><p class="note">Live prices can be checked once a week.</p>`
-      : `<div class="btns"><button class="btn pri" id="cLive">Check live prices at ${esc(store)}</button></div><p class="note" id="cMsg">Looks up today's prices on ${esc(store)}'s website. You can do this once a week; prices are kept for ${LIVE_DAYS} days.</p>`) : ''}
-    <p class="note">Change your shop in Settings → Kitchen &amp; list.</p>`, el=>{
+    <p class="note">Prices are checked every Monday at Tesco, Sainsbury’s and Morrisons. Other shops are scaled using Which?’s monthly supermarket comparison${sp && sp.which && sp.which.month ? ' (' + esc(sp.which.month) + ')' : ''}. Change your shop in Settings → Kitchen &amp; list.</p>`, el=>{
     el.querySelectorAll('#cSmall button').forEach(x=>x.onclick=()=>{ state.prefs.small = x.dataset.v==='1'; save(); render(); sheetCost(); });
-    const b = el.querySelector('#cLive'); if (!b) return;
-    b.onclick = async ()=>{ b.disabled = true; b.innerHTML = '<span class="spin"></span>Checking prices…';
-      try { await checkLive(open, t=>{ b.innerHTML = `<span class="spin"></span>${t}`; }); render(); sheetCost(); }
-      catch(e){ if (/limit:price/.test(e && e.message || '')){ const c = priceChk(); c.done = true; try { localStorage.setItem(CHK_LS, JSON.stringify(c)); } catch(_){} }
-        b.disabled = false; b.textContent = 'Try again'; el.querySelector('#cMsg').textContent = e && e.status===-2 ? 'Couldn’t read the prices that came back. Try again.' : /limit:|not set up/.test(e && e.message || '') ? aiErrMsg(e) : aiErrMsg(e) + ' Live prices use Google Search, which needs billing on the Gemini key.'; }
-    };
   });
-}
-async function checkLive(items, prog){
-  const st = state.prefs.store || 'tesco', store = storeName(), list = items.slice(0, 40);
-  const prompt = `Search the web for today's prices at ${store} in the UK (their own grocery website) for this shopping list. For each item, pick the standard pack most shoppers would buy: the store's own mainstream range, not premium and not the value range. Use the price shown now; if there is a loyalty-card price (Clubcard, Nectar, More Card) use that and say so in "product". If a line asks for more than one pack (e.g. "2 x milk"), give the price of ONE pack.
-
-LIST:
-${list.map((x,i)=>`${i+1}. ${x.name}`).join('\n')}
-
-Reply with ONLY JSON, no other text: {"items":[{"n":1,"product":"${store} semi skimmed milk 2.27L","price":1.65}]}
-"n" is the list number, "product" is the exact product and pack size (under 60 characters), "price" is in pounds. Use null for price if you can't find it.`;
-  let ck = priceChk(); if (!ck.aid || ck.done || Date.now() - ck.t > 7*864e5) ck = {aid: uid() + uid(), t: Date.now()};
-  try { localStorage.setItem(CHK_LS, JSON.stringify(ck)); } catch(e){}
-  const j = await askJSON(prompt, {url:'search', kind:'price', aid: ck.aid, onText:(t,th)=>{ if (prog) prog(t ? 'Adding it up…' : th ? 'Searching ' + store + '…' : 'Checking prices…'); }});
-  const all = livePrices(), m = all[st] = all[st] || {}; let n = 0;
-  (j.items||[]).forEach(r=>{ const x = list[(+r.n||0)-1], p = Math.round(parseFloat(r.price)*100); if (!x || !(p > 0 && p < 20000)) return;
-    m[normName(x.name)] = {p, prod: shortLine(String(r.product||''), 60), t: Date.now()}; n++; });
-  for (const k in m) if (m[k].t < Date.now() - 60*864e5) delete m[k];
-  try { localStorage.setItem(PRICES_LS, JSON.stringify(all)); } catch(e){}
-  if (!n) throw {status:-2};
-  ck.done = true; try { localStorage.setItem(CHK_LS, JSON.stringify(ck)); } catch(e){}
-  return n;
 }
 
 const storeName = () => (STORES[state.prefs.store] || STORES.tesco)[0];
@@ -1963,7 +1954,7 @@ function vList(){
   let h = pageTop('Shopping') + `<form id="lf" class="inrow"><input type="text" id="li" placeholder="Add something" autocomplete="off" enterkeyhint="done"><button class="btn pri" type="submit" aria-label="Add">Add</button></form>`;
   if (!state.list.length) return h + `<div class="empty"><p class="big">Nothing to buy</p><p>Things you run out of, and anything your dinners need, land here.</p></div>`;
   const groups = {}; open.forEach(x=>(groups[aisleOf(x.name)] = groups[aisleOf(x.name)] || []).push(x));
-  if (open.length){ const c = costOf(open); h += `<button class="cost" data-act="cost"><span>About <b>${gbp(c.total)}</b> at ${esc(storeName())}</span><small>${c.live === open.length ? 'live prices' : c.live ? 'some live prices' : 'estimate'} ›</small></button>`; }
+  if (open.length){ const c = costOf(open); h += `<button class="cost" data-act="cost"><span>About <b>${gbp(c.total)}</b> at ${esc(storeName())}</span><small>${c.live ? 'this week’s prices' : 'estimate'} ›</small></button>`; }
   const row = x => `<div class="row ${x.done?'done':''}"><button class="tick" data-act="ltog" data-id="${x.id}" aria-label="${x.done?'Untick':'Tick'} ${esc(x.name)}"></button><button class="m" data-act="ltog" data-id="${x.id}" style="text-align:left"><div class="n">${esc(x.name)}</div>${x.reason && !x.done ? `<div class="s">${esc(x.reason)}</div>` : ''}</button>${x.done ? '' : `<a class="ib" href="${storeUrl(x.name)}" target="_blank" rel="noopener" aria-label="Find at ${esc(storeName())}" style="color:var(--mut)">${IC.ext}</a>`}</div>`;
   AISLES.filter(a=>groups[a]).forEach(a=>{ h += `<div class="sec"><h2>${a}</h2></div><div class="rows">${groups[a].map(row).join('')}</div>`; });
   if (done.length) h += `<div class="sec"><h2>In your basket · ${done.length}</h2><button class="lnk" data-act="lclear">Clear</button></div><div class="rows">${done.map(row).join('')}</div>
@@ -2200,13 +2191,13 @@ if (!state.prefs.v2){   // Larder 2: dinners-only week, no food diary
 }
 snapMap = recMap(state);
 sweep(); save(); render();
-initRemote(); initSample(); loadCfg();
+initRemote(); initSample(); loadCfg(); loadPrices();
 if ('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 mirrorNotify(); setTimeout(syncPush, 1500);
 if (!state.prefs.onboarded) openOnb();
 if (getHH()) setTimeout(hhSync, 800);
 setInterval(()=>{ if (!document.hidden && getHH()) hhSync(); }, 45000);
-document.addEventListener('visibilitychange', ()=>{ if (!document.hidden){ setBadge(); loadCfg(); if (getHH()) hhSync(); if (sweep()){ save(); render(); } } });
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden){ setBadge(); loadCfg(); loadPrices(); if (getHH()) hhSync(); if (sweep()){ save(); render(); } } });
 
 </script>
 </body>

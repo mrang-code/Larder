@@ -1,0 +1,490 @@
+{
+ "version": 1,
+ "stores_direct": [
+  "tesco",
+  "sainsburys",
+  "morrisons"
+ ],
+ "items": [
+  {
+   "key": "milk",
+   "q": "semi skimmed milk",
+   "want": "own-brand semi skimmed milk 4 pints (2.27L)"
+  },
+  {
+   "key": "butter",
+   "q": "butter",
+   "want": "own-brand salted block butter 250g"
+  },
+  {
+   "key": "cheddar",
+   "q": "mature cheddar",
+   "want": "own-brand mature cheddar about 400g"
+  },
+  {
+   "key": "mozzarella",
+   "q": "mozzarella",
+   "want": "own-brand mozzarella ball 125g"
+  },
+  {
+   "key": "halloumi",
+   "q": "halloumi",
+   "want": "own-brand halloumi 225-250g"
+  },
+  {
+   "key": "feta",
+   "q": "feta",
+   "want": "own-brand feta about 200g"
+  },
+  {
+   "key": "parmesan",
+   "q": "parmigiano reggiano",
+   "want": "own-brand parmigiano reggiano wedge about 200g"
+  },
+  {
+   "key": "cream cheese",
+   "q": "soft cheese",
+   "want": "own-brand soft cheese 180-200g tub"
+  },
+  {
+   "key": "double cream",
+   "q": "double cream",
+   "want": "own-brand double cream 300ml"
+  },
+  {
+   "key": "creme fraiche",
+   "q": "creme fraiche",
+   "want": "own-brand creme fraiche 300ml"
+  },
+  {
+   "key": "yogurt",
+   "q": "natural yogurt",
+   "want": "own-brand natural yogurt 500g"
+  },
+  {
+   "key": "greek yogurt",
+   "q": "greek style yogurt",
+   "want": "own-brand greek style yogurt 500g"
+  },
+  {
+   "key": "egg",
+   "q": "free range eggs",
+   "want": "own-brand 6 large free range eggs"
+  },
+  {
+   "key": "bread",
+   "q": "white bread",
+   "want": "own-brand medium sliced white loaf 800g"
+  },
+  {
+   "key": "wrap",
+   "q": "tortilla wraps",
+   "want": "own-brand 8 plain tortilla wraps"
+  },
+  {
+   "key": "pitta",
+   "q": "pitta bread",
+   "want": "own-brand 6 white pitta"
+  },
+  {
+   "key": "naan",
+   "q": "naan bread",
+   "want": "own-brand 2 plain naan"
+  },
+  {
+   "key": "bagel",
+   "q": "bagels",
+   "want": "own-brand 5 plain bagels"
+  },
+  {
+   "key": "chicken",
+   "q": "chicken breast fillets",
+   "want": "own-brand British chicken breast fillets about 600-650g"
+  },
+  {
+   "key": "chicken thigh",
+   "q": "chicken thighs",
+   "want": "own-brand chicken thigh fillets (boneless) about 500-600g"
+  },
+  {
+   "key": "whole chicken",
+   "q": "whole chicken",
+   "want": "own-brand whole chicken about 1.5kg"
+  },
+  {
+   "key": "beef mince",
+   "q": "beef mince",
+   "want": "own-brand beef mince 500g about 5% or 10% fat"
+  },
+  {
+   "key": "mince",
+   "q": "beef mince 20% fat",
+   "want": "own-brand beef mince 500g 20% fat"
+  },
+  {
+   "key": "lamb mince",
+   "q": "lamb mince",
+   "want": "own-brand lamb mince 500g"
+  },
+  {
+   "key": "pork mince",
+   "q": "pork mince",
+   "want": "own-brand pork mince 500g"
+  },
+  {
+   "key": "turkey mince",
+   "q": "turkey mince",
+   "want": "own-brand turkey breast mince 500g"
+  },
+  {
+   "key": "steak",
+   "q": "sirloin steak",
+   "want": "own-brand sirloin steak about 225g"
+  },
+  {
+   "key": "sausage",
+   "q": "pork sausages",
+   "want": "own-brand 8 pork sausages (not value, not finest)"
+  },
+  {
+   "key": "bacon",
+   "q": "smoked back bacon",
+   "want": "own-brand smoked back bacon about 300g"
+  },
+  {
+   "key": "ham",
+   "q": "cooked ham slices",
+   "want": "own-brand cooked ham about 120g"
+  },
+  {
+   "key": "chorizo",
+   "q": "chorizo",
+   "want": "own-brand chorizo ring or slices about 200g"
+  },
+  {
+   "key": "salmon",
+   "q": "salmon fillets",
+   "want": "own-brand 2 salmon fillets about 240g"
+  },
+  {
+   "key": "cod",
+   "q": "cod fillets",
+   "want": "own-brand cod fillets about 250-300g (chilled)"
+  },
+  {
+   "key": "tuna",
+   "q": "tuna chunks in brine",
+   "want": "own-brand tuna chunks in brine 145g tin"
+  },
+  {
+   "key": "prawn",
+   "q": "king prawns",
+   "want": "own-brand raw king prawns about 150-180g"
+  },
+  {
+   "key": "tofu",
+   "q": "tofu",
+   "want": "firm tofu about 280-400g"
+  },
+  {
+   "key": "potato",
+   "q": "white potatoes",
+   "want": "own-brand white potatoes 2.5kg"
+  },
+  {
+   "key": "sweet potato",
+   "q": "sweet potatoes",
+   "want": "own-brand sweet potatoes 1kg"
+  },
+  {
+   "key": "onion",
+   "q": "brown onions",
+   "want": "own-brand brown onions 1kg"
+  },
+  {
+   "key": "red onion",
+   "q": "red onions",
+   "want": "own-brand red onions about 3 pack or 1kg"
+  },
+  {
+   "key": "spring onion",
+   "q": "spring onions",
+   "want": "own-brand spring onions bunch 100g"
+  },
+  {
+   "key": "garlic",
+   "q": "garlic",
+   "want": "own-brand garlic 4 pack or 2 bulbs"
+  },
+  {
+   "key": "carrot",
+   "q": "carrots",
+   "want": "own-brand carrots 1kg"
+  },
+  {
+   "key": "broccoli",
+   "q": "broccoli",
+   "want": "own-brand broccoli about 350g"
+  },
+  {
+   "key": "cauliflower",
+   "q": "cauliflower",
+   "want": "own-brand whole cauliflower"
+  },
+  {
+   "key": "spinach",
+   "q": "baby spinach",
+   "want": "own-brand baby spinach about 200-260g bag"
+  },
+  {
+   "key": "lettuce",
+   "q": "iceberg lettuce",
+   "want": "own-brand iceberg lettuce each"
+  },
+  {
+   "key": "cucumber",
+   "q": "cucumber",
+   "want": "own-brand whole cucumber each"
+  },
+  {
+   "key": "tomato",
+   "q": "tomatoes",
+   "want": "own-brand classic round tomatoes 6 pack"
+  },
+  {
+   "key": "cherry tomato",
+   "q": "cherry tomatoes",
+   "want": "own-brand cherry tomatoes about 250-330g"
+  },
+  {
+   "key": "pepper",
+   "q": "mixed peppers",
+   "want": "own-brand mixed peppers 3 pack"
+  },
+  {
+   "key": "mushroom",
+   "q": "closed cup mushrooms",
+   "want": "own-brand closed cup mushrooms about 300g"
+  },
+  {
+   "key": "courgette",
+   "q": "courgettes",
+   "want": "own-brand courgettes 2-3 pack or 500g"
+  },
+  {
+   "key": "aubergine",
+   "q": "aubergine",
+   "want": "own-brand aubergine each"
+  },
+  {
+   "key": "avocado",
+   "q": "avocados",
+   "want": "own-brand 2 ripe avocados"
+  },
+  {
+   "key": "ginger",
+   "q": "root ginger",
+   "want": "own-brand fresh root ginger loose or pack"
+  },
+  {
+   "key": "chilli",
+   "q": "red chillies",
+   "want": "own-brand red chillies pack"
+  },
+  {
+   "key": "peas",
+   "q": "frozen peas",
+   "want": "own-brand frozen garden peas about 900g-1kg"
+  },
+  {
+   "key": "coriander",
+   "q": "fresh coriander",
+   "want": "own-brand fresh coriander pack about 28-30g"
+  },
+  {
+   "key": "banana",
+   "q": "bananas",
+   "want": "own-brand bananas 5 pack"
+  },
+  {
+   "key": "apple",
+   "q": "apples",
+   "want": "own-brand pink lady or gala apples 4-6 pack"
+  },
+  {
+   "key": "lemon",
+   "q": "lemons",
+   "want": "own-brand unwaxed lemons 4 pack"
+  },
+  {
+   "key": "lime",
+   "q": "limes",
+   "want": "own-brand limes 4-5 pack"
+  },
+  {
+   "key": "grape",
+   "q": "seedless grapes",
+   "want": "own-brand seedless grapes about 500g"
+  },
+  {
+   "key": "strawberr",
+   "q": "strawberries",
+   "want": "own-brand strawberries about 400g"
+  },
+  {
+   "key": "blueberr",
+   "q": "blueberries",
+   "want": "own-brand blueberries about 150g"
+  },
+  {
+   "key": "pasta",
+   "q": "penne pasta",
+   "want": "own-brand penne pasta 500g"
+  },
+  {
+   "key": "spaghetti",
+   "q": "spaghetti",
+   "want": "own-brand spaghetti 500g"
+  },
+  {
+   "key": "rice",
+   "q": "long grain rice",
+   "want": "own-brand long grain rice 1kg"
+  },
+  {
+   "key": "basmati",
+   "q": "basmati rice",
+   "want": "own-brand basmati rice 1kg"
+  },
+  {
+   "key": "noodle",
+   "q": "egg noodles",
+   "want": "own-brand medium egg noodles about 250-300g"
+  },
+  {
+   "key": "oats",
+   "q": "porridge oats",
+   "want": "own-brand porridge oats 1kg"
+  },
+  {
+   "key": "flour",
+   "q": "plain flour",
+   "want": "own-brand plain flour 1.5kg"
+  },
+  {
+   "key": "sugar",
+   "q": "granulated sugar",
+   "want": "own-brand granulated sugar 1kg"
+  },
+  {
+   "key": "chopped tomato",
+   "q": "chopped tomatoes",
+   "want": "own-brand chopped tomatoes 400g tin"
+  },
+  {
+   "key": "passata",
+   "q": "passata",
+   "want": "own-brand passata 500g"
+  },
+  {
+   "key": "tomato puree",
+   "q": "tomato puree",
+   "want": "own-brand tomato puree tube about 200g"
+  },
+  {
+   "key": "baked bean",
+   "q": "baked beans",
+   "want": "own-brand baked beans 400g tin"
+  },
+  {
+   "key": "kidney bean",
+   "q": "red kidney beans",
+   "want": "own-brand red kidney beans in water 400g tin"
+  },
+  {
+   "key": "chickpea",
+   "q": "chickpeas",
+   "want": "own-brand chickpeas in water 400g tin"
+  },
+  {
+   "key": "coconut milk",
+   "q": "coconut milk",
+   "want": "own-brand coconut milk 400ml tin"
+  },
+  {
+   "key": "stock",
+   "q": "chicken stock cubes",
+   "want": "own-brand chicken stock cubes pack"
+  },
+  {
+   "key": "olive oil",
+   "q": "olive oil",
+   "want": "own-brand olive oil 500ml-1L (give the 1L price if both)"
+  },
+  {
+   "key": "oil",
+   "q": "vegetable oil",
+   "want": "own-brand vegetable oil 1L"
+  },
+  {
+   "key": "soy sauce",
+   "q": "soy sauce",
+   "want": "own-brand soy sauce about 150ml"
+  },
+  {
+   "key": "ketchup",
+   "q": "tomato ketchup",
+   "want": "Heinz tomato ketchup about 460-500g"
+  },
+  {
+   "key": "mayo",
+   "q": "mayonnaise",
+   "want": "Hellmann's real mayonnaise about 400g squeezy"
+  },
+  {
+   "key": "honey",
+   "q": "honey",
+   "want": "own-brand clear honey about 340g"
+  },
+  {
+   "key": "peanut butter",
+   "q": "peanut butter",
+   "want": "own-brand smooth peanut butter about 340g"
+  },
+  {
+   "key": "cereal",
+   "q": "cornflakes",
+   "want": "own-brand cornflakes about 500g"
+  },
+  {
+   "key": "coffee",
+   "q": "instant coffee",
+   "want": "Nescafe original instant coffee about 200g"
+  },
+  {
+   "key": "tea",
+   "q": "tea bags",
+   "want": "PG Tips 80 tea bags"
+  },
+  {
+   "key": "pesto",
+   "q": "green pesto",
+   "want": "own-brand green pesto about 190g"
+  },
+  {
+   "key": "juice",
+   "q": "orange juice",
+   "want": "own-brand smooth orange juice 1L"
+  },
+  {
+   "key": "chips",
+   "q": "oven chips",
+   "want": "own-brand straight cut oven chips about 1.5kg"
+  },
+  {
+   "key": "toilet roll",
+   "q": "toilet roll",
+   "want": "own-brand 9 rolls toilet tissue"
+  }
+ ]
+}

@@ -1,5 +1,5 @@
 // Larder service worker: instant opening, offline support and expiry reminders.
-const CACHE = 'larder-v30';
+const CACHE = 'larder-v31';
 const FILES = ['./', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
@@ -11,6 +11,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // never touch Gemini or reminder-server calls
+  if (url.pathname.endsWith('/prices.json')) return;   // weekly prices: always from the network
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const hit = await cache.match(req, {ignoreSearch: true});
