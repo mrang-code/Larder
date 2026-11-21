@@ -1,0 +1,5 @@
+<!doctype html><meta charset="utf-8"><title>diag</title><pre id="o">running…</pre><script>
+const S='https://larder-reminders.mustafarangwalla.workers.dev', o=document.getElementById('o'), out=[];
+const t = async (name, path, body) => { try { const r = await fetch(S+path, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {}); out.push(name+': '+r.status+' '+(await r.text()).slice(0,160)); } catch(e){ out.push(name+': FETCH FAILED '+e); } o.textContent = out.join('\n'); };
+(async()=>{ await t('root','/'); await t('config','/config'); await t('hh-read','/hh/sync',{id:'abcdefghij',secret:'x'}); await t('admin-wrong (writes)','/admin/get',{code:'wrong-code-test'}); o.textContent = out.join('\n') + '\nDONE'; })();
+</script>
