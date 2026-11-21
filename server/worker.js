@@ -7,6 +7,10 @@
 // 2. Shared kitchen: keeps one copy of a household's kitchen, list, plan and cookbook, so several
 //    phones stay in sync. Each household is protected by a secret in its invite code.
 //
+// 3. AI: the Gemini key lives here, not on the phones. Phones send their AI requests to /ai, and this
+//    server adds the key, applies the daily limits and passes the answer straight back.
+//    The admin code (set once with /admin/setup) is needed to change the key, model or limits.
+//
 // Setup (see the guide): paste this file into a Worker, add a KV binding named DB,
 // and add a Cron Trigger of  0 * * * *  (every hour).
 
@@ -88,6 +92,72 @@ async function household(path, b, env, origin) {
   return json({error: 'Not found'}, 404, origin);
 }
 
+// ---------- shared settings, admin and AI ----------
+const DEFAULTS = {key: '', model: 'gemini-3.5-flash', best: false, limits: {photo: 5, gen: 10, total: 150}};
+async function getCfg(env) { const c = await env.DB.get('cfg', 'json'); return {...DEFAULTS, ...(c || {}), limits: {...DEFAULTS.limits, ...((c || {}).limits || {})}}; }
+const publicCfg = c => ({ai: !!c.key, model: c.model, best: !!c.best, limits: c.limits});
+const okModel = m => /^gemini-[a-z0-9.\-]{1,40}$/.test(String(m || ''));
+const today = () => new Date().toISOString().slice(0, 10);
+async function adminOk(env, code, ip) {
+  const a = await env.DB.get('admin', 'json'); if (!a) return 'nosetup';
+  const lk = 'lock:' + (ip || 'x'), lock = await env.DB.get(lk, 'json');
+  if (lock && lock.n >= 5 && Date.now() - lock.t < 3600e3) return 'locked';
+  if (a.h === await sha(a.salt + String(code || ''))) return 'ok';
+  await env.DB.put(lk, JSON.stringify({n: (lock && Date.now() - lock.t < 3600e3 ? lock.n : 0) + 1, t: Date.now()}), {expirationTtl: 3600});
+  return 'bad';
+}
+async function admin(path, b, env, origin, ip) {
+  if (path === '/admin/setup') {
+    if (await env.DB.get('admin')) return json({error: 'Admin code is already set'}, 403, origin);
+    const code = String(b.code || ''); if (code.length < 6) return json({error: 'Use at least 6 characters'}, 400, origin);
+    const salt = rid(16); await env.DB.put('admin', JSON.stringify({salt, h: await sha(salt + code)}));
+    return json({ok: true}, 200, origin);
+  }
+  const v = await adminOk(env, b.code, ip);
+  if (v !== 'ok') return json({error: v === 'nosetup' ? 'Admin code not set up yet' : v === 'locked' ? 'Too many wrong codes. Try again in an hour.' : 'Wrong admin code'}, v === 'nosetup' ? 404 : 403, origin);
+  const c = await getCfg(env);
+  if (path === '/admin/config' && b.set && typeof b.set === 'object') {
+    const s = b.set;
+    if (typeof s.key === 'string' && s.key.trim()) c.key = s.key.trim().slice(0, 200);
+    if (s.clearKey) c.key = '';
+    if (okModel(s.model)) c.model = s.model;
+    if (typeof s.best === 'boolean') c.best = s.best;
+    if (s.limits && typeof s.limits === 'object') ['photo', 'gen', 'total'].forEach(k => { const n = Math.round(+s.limits[k]); if (n >= 0 && n <= 10000) c.limits[k] = n; });
+    if (typeof s.newCode === 'string' && s.newCode.length >= 6) { const salt = rid(16); await env.DB.put('admin', JSON.stringify({salt, h: await sha(salt + s.newCode)})); }
+    await env.DB.put('cfg', JSON.stringify(c));
+  }
+  const use = (await env.DB.get('use:all:' + today(), 'json')) || {n: 0};
+  return json({ok: true, cfg: {...publicCfg(c), keyEnd: c.key ? c.key.slice(-4) : ''}, today: use.n}, 200, origin);
+}
+// Counts one AI action per phone (an action can take more than one request when a model falls back).
+async function spendAI(env, c, dev, kind, aid) {
+  const d = today(), lim = c.limits;
+  const uk = 'use:' + dev + ':' + d, u = (await env.DB.get(uk, 'json')) || {photo: [], gen: [], other: []};
+  const list = u[kind] || (u[kind] = []);
+  if (list.includes(aid)) return null;
+  const all = (await env.DB.get('use:all:' + d, 'json')) || {n: 0};
+  if (all.n >= lim.total) return 'total';
+  if (kind === 'photo' && list.length >= lim.photo) return 'photo';
+  if (kind === 'gen' && list.length >= lim.gen) return 'gen';
+  if (kind === 'other' && list.length >= 30) return 'other';
+  list.push(aid); all.n++;
+  await env.DB.put(uk, JSON.stringify(u), {expirationTtl: 3 * 86400});
+  await env.DB.put('use:all:' + d, JSON.stringify(all), {expirationTtl: 3 * 86400});
+  return null;
+}
+async function ai(b, env, origin) {
+  const c = await getCfg(env);
+  if (!c.key) return json({error: {code: 503, message: 'AI is not set up yet. Ask the admin to add a Gemini key.'}}, 503, origin);
+  const dev = String(b.dev || ''), aid = String(b.aid || ''), kind = ['photo', 'gen', 'other'].includes(b.kind) ? b.kind : 'other';
+  if (!/^[a-z0-9]{8,24}$/.test(dev) || !/^[a-z0-9]{6,24}$/.test(aid)) return json({error: {code: 400, message: 'Bad request'}}, 400, origin);
+  const over = await spendAI(env, c, dev, kind, aid);
+  if (over) return json({error: {code: 429, message: 'limit:' + over}}, 429, origin);
+  const model = okModel(b.model) ? b.model : c.model;
+  const up = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
+    {method: 'POST', headers: {'Content-Type': 'application/json', 'x-goog-api-key': c.key}, body: JSON.stringify(b.body || {})});
+  return new Response(up.body, {status: up.status, headers: {'Content-Type': up.headers.get('Content-Type') || 'text/event-stream', 'Cache-Control': 'no-store', ...cors(origin)}});
+}
+
 async function keyFor(endpoint) { return 'sub:' + b64u(await crypto.subtle.digest('SHA-256', enc(endpoint))); }
 
 // The server makes its own signing keys the first time it runs and keeps them in storage.
@@ -147,16 +217,19 @@ export default {
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors(origin)});
     if (req.method === 'GET' && url.pathname === '/') {
-      return new Response('Larder server is running (v3).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB'), {headers: {'Content-Type': 'text/plain'}});
+      return new Response('Larder server is running (v4).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB'), {headers: {'Content-Type': 'text/plain', ...cors(origin)}});
     }
     if (!env.DB) return json({error: 'Storage is not connected. Add a KV binding named DB.'}, 500, origin);
     if (req.method === 'GET' && url.pathname === '/key') return json({key: (await vapid(env)).pub}, 200, origin);
+    if (req.method === 'GET' && url.pathname === '/config') return json(publicCfg(await getCfg(env)), 200, origin);
     if (req.method !== 'POST') return json({error: 'Not found'}, 404, origin);
     if (!ALLOWED_ORIGINS.includes(origin)) return json({error: 'Not allowed'}, 403, origin);
 
-    if (+(req.headers.get('Content-Length') || 0) > 3e6) return json({error: 'Too large'}, 413, origin);
+    if (+(req.headers.get('Content-Length') || 0) > 8e6) return json({error: 'Too large'}, 413, origin);
     let b; try { b = await req.json(); } catch (e) { return json({error: 'Bad request'}, 400, origin); }
     if (url.pathname.startsWith('/hh/')) return household(url.pathname, b || {}, env, origin);
+    if (url.pathname === '/ai') return ai(b || {}, env, origin);
+    if (url.pathname.startsWith('/admin/')) return admin(url.pathname, b || {}, env, origin, req.headers.get('CF-Connecting-IP') || '');
     const endpoint = String((b && b.sub && b.sub.endpoint) || (b && b.endpoint) || '');
     if (!okEndpoint(endpoint)) return json({error: 'Bad subscription'}, 400, origin);
     const k = await keyFor(endpoint);
