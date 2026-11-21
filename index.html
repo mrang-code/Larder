@@ -508,7 +508,7 @@ const NUTDB = {
  'granola':[450,10,60,18],'oat':[375,11,60,8],'sweet potato':[86,1.6,20,0.1,250],'potato':[77,2,17,0.1,250],
  'red lentil':[330,24,48,1.5],'lentil':[330,24,48,1.5],'chickpea':[120,7,16,2.5],'baked bean':[80,4.7,13,0.3],'kidney bean':[100,7,14,0.5],'black bean':[100,7,14,0.5],'bean':[100,7,14,0.5],'edamame':[120,12,9,5],
  'coconut milk':[170,1.5,3,17],'coconut cream':[200,2,3,20],'stock':[5,0.5,0.5,0.2],'passata':[30,1.3,5,0.2],'chopped tomato':[22,1.1,3.5,0.1],'tinned tomato':[22,1.1,3.5,0.1],'canned tomato':[22,1.1,3.5,0.1],'tomato':[18,0.9,3,0.2,85],
- 'red onion':[40,1.1,9,0.1,150],'spring onion':[32,1.8,7,0.2,15],'onion':[40,1.1,9,0.1,150],'garlic':[150,6,33,0.5,5],'pepper':[30,1,6,0.3,160],'carrot':[41,0.9,9,0.2,80],'broccoli':[34,2.8,7,0.4,350],'cauliflower':[25,2,5,0.3,500],
+ 'red onion':[40,1.1,9,0.1,150],'spring onion':[32,1.8,7,0.2,15],'onion':[40,1.1,9,0.1,150],'garlic':[150,6,33,0.5,5],'black pepper':[0,0,0,0,0],'white pepper':[0,0,0,0,0],'cayenne':[0,0,0,0,0],'peppercorn':[0,0,0,0,0],'chilli flake':[0,0,0,0,0],'chilli powder':[0,0,0,0,0],'pepper':[30,1,6,0.3,160],'carrot':[41,0.9,9,0.2,80],'broccoli':[34,2.8,7,0.4,350],'cauliflower':[25,2,5,0.3,500],
  'spinach':[23,2.9,3.6,0.4],'kale':[49,4.3,9,0.9],'mushroom':[22,3,3,0.3,20],'courgette':[17,1.2,3,0.3,250],'aubergine':[25,1,6,0.2,300],'cucumber':[15,0.7,3.6,0.1,300],'lettuce':[15,1.4,3,0.2,300],'rocket':[25,2.6,3.7,0.7],'salad':[20,1.5,3,0.3],
  'sweetcorn':[85,3,17,1.5],'corn':[85,3,17,1.5],'peas':[80,5.4,14,0.4],'green bean':[31,1.8,7,0.2],'asparagus':[20,2.2,4,0.1],'pak choi':[13,1.5,2,0.2],'mange tout':[32,3,4,0.2],'sugar snap':[42,3,7,0.2],'beansprout':[30,3,4,0.2],
  'leek':[31,1.5,7,0.3,200],'celery':[16,0.7,3,0.2,40],'cabbage':[25,1.3,6,0.1],'squash':[45,1,10,0.1],'stir fry':[30,2,5,0.3],'stir-fry':[30,2,5,0.3],'greens':[30,2.5,5,0.4],'veg':[30,1.5,6,0.3],
@@ -579,13 +579,13 @@ const _nn = new Map();
 const normName = s => { s = String(s||''); let v = _nn.get(s); if (v === undefined){ v = s.toLowerCase().replace(/[^a-z' ]+/g,' ').split(' ').filter(Boolean).map(sing).join(' '); if (_nn.size > 5000) _nn.clear(); _nn.set(s, v); } return v; };
 const hasWords = (hay, needle) => !!needle && new RegExp('(^| )' + reEsc(needle) + '( |$)').test(hay);
 // A recipe spice ("smoked paprika", "caster sugar") against a jar in the rack ("Paprika", "Sugar"), either way round.
-function spiceMatch(s, alt){ const n = normName(s.name), a = normName(alt); return !!a && (n===a || hasWords(n, a) || hasWords(a, n)); }
+function spiceMatch(s, alt){ const n = normName(s.name), a = normName(alt); return !!a && !pepperClash(n, a) && (n===a || hasWords(n, a) || hasWords(a, n)); }
 function findSpice(keys){ const al = keys.split('|').map(a=>a.trim()).filter(Boolean); return state.spices.find(s=>s.level>0 && al.some(a=>spiceMatch(s, a))); }
 // A recipe ingredient that you keep in the spice rack instead (sugar, honey, flour, stock cubes…).
 function rackFor(keys){
   const al = keys.split('|').map(a=>normName(a)).filter(Boolean);
   return state.spices.find(s=>{ if (!(s.level>0)) return false; const n = normName(s.name), head = n.split(' ').pop();
-    return al.some(a=>a===n || hasWords(a, n) || (a.split(' ').length===1 && a===head)); });
+    return al.some(a=>!pepperClash(n, a) && !wrongForm(a, n) && (a===n || hasWords(a, n) || (a.split(' ').length===1 && a===head))); });
 }
 // Every shelf-life word inside a phrase, minus ones that are only the tail of a longer word ("milk" in "coconut milk").
 let _fk = null; const _fkc = new Map();
@@ -596,9 +596,17 @@ function foodKeysIn(s){
   v = ks.filter(k=>!ks.some(o=>o!==k && o.endsWith(' '+k))); if (_fkc.size > 5000) _fkc.clear(); _fkc.set(n, v); return v;
 }
 // The same word in a different product: ketchup isn't a tomato, chicken stock isn't chicken, tinned tomatoes aren't fresh ones.
-const MADE_INTO = ['ketchup','sauce','puree','paste','passata','soup','juice','powder','powdered','sundried','pickled','jam','crisp','stock','cube','oil','vinegar','gravy','seasoning','mayo','mayonnaise','dip','salsa','relish','chutney','smoothie','cake','pie','pizza','sandwich','flavour','flavoured','flavor','flavored','bread','noodle','bar','cereal','drink','tea','spread','syrup','extract','essence','flake','granule','fried','ready','meal','kit','mix','butter','milk','cream','yogurt','yoghurt','icecream'];
-const FORMS = [[/\b(tinned|canned|chopped|peeled|plum|dried|sun)\b/, /tomatoe?$/], [/\bsmoked\b/, /^(salmon|fish)$/], [/\bdried\b/, /^(mushroom|chilli|apricot|mango|fruit|berr\w*)$/], [/\b(sweet)\b/, /^potato$/], [/\bspring\b/, /^onion$/], [/\b(coconut|peanut|almond|nut|cashew|ice)\b/, /^(milk|butter|cream)$/], [/\bcheese\b/, /^cream$/], [/\b(baked|kidney|black|green|butter|broad|runner|coffee|jelly)\b/, /^$/]];
+const MADE_INTO = ['seed','granule','salt','ketchup','sauce','puree','paste','passata','soup','juice','powder','powdered','sundried','pickled','jam','crisp','stock','cube','oil','vinegar','gravy','seasoning','mayo','mayonnaise','dip','salsa','relish','chutney','smoothie','cake','pie','pizza','sandwich','flavour','flavoured','flavor','flavored','bread','noodle','bar','cereal','drink','tea','spread','syrup','extract','essence','flake','granule','fried','ready','meal','kit','mix','butter','milk','cream','yogurt','yoghurt','icecream'];
+const FORMS = [[/\b(tinned|canned|chopped|peeled|plum|dried|sun)\b/, /tomatoe?$/], [/\bsmoked\b/, /^(salmon|fish)$/], [/\bdried\b/, /^(mushroom|chilli|apricot|mango|fruit|berr\w*)$/], [/\b(sweet)\b/, /^potato$/], [/\bground\b/, /^(ginger|garlic|almond|coriander|cinnamon|nutmeg|cumin|clove)$/], [/\b(dried|ground)\b/, /^(herb|parsley|basil|oregano|thyme|rosemary|mint|dill|coriander)$/], [/\bspring\b/, /^onion$/], [/\b(coconut|peanut|almond|nut|cashew|ice)\b/, /^(milk|butter|cream)$/], [/\bcheese\b/, /^cream$/], [/\b(baked|kidney|black|green|butter|broad|runner|coffee|jelly)\b/, /^$/]];
+const PEP_T = /\b(black|white|cayenne|szechuan|sichuan|pink|lemon|chilli|chili|jalapeno|jalape|habanero|scotch|bird|peppercorn|flake)\b/g;
+// "black pepper", "chilli pepper" and "peppercorns" are different things from a (bell) pepper.
+function pepperClash(n, a){
+  if (!/\bpepper/.test(a) || !/\bpepper/.test(n)) return false;
+  const kind = s => { const t = [...new Set((s.match(PEP_T)||[]))].sort(); if (!t.length && /\b(ground|cracked)\b/.test(s)) t.push('black'); return t.join(','); };
+  return kind(n) !== kind(a);
+}
 function wrongForm(n, a){
+  if (pepperClash(n, a)) return true;
   const aw = a.split(' '), nw = n.split(' ');
   if (!aw.every(w=>nw.some(x=>x.includes(w)))) return false;      // only judge when the word is actually in the name
   const at = nw.findIndex(x=>x.includes(aw[aw.length-1]));
