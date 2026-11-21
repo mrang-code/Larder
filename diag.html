@@ -1,5 +1,6 @@
 <!doctype html><meta charset="utf-8"><title>diag</title><pre id="o">running…</pre><script>
 const S='https://larder-reminders.mustafarangwalla.workers.dev', o=document.getElementById('o'), out=[];
-const t = async (name, path, body) => { try { const r = await fetch(S+path, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {}); out.push(name+': '+r.status+' '+(await r.text()).slice(0,160)); } catch(e){ out.push(name+': FETCH FAILED '+e); } o.textContent = out.join('\n'); };
-(async()=>{ await t('root','/'); await t('config','/config'); await t('hh-read','/hh/sync',{id:'abcdefghij',secret:'x'}); await t('admin-wrong (writes)','/admin/get',{code:'wrong-code-test'}); o.textContent = out.join('\n') + '\nDONE'; })();
+const t = async (name, kb) => { const pad = 'A'.repeat(kb*1024); const body = {model:'gemini-nonexistent-x', kind:'other', aid:'diag'+kb+Date.now().toString(36).slice(-6), dev:'diagdevice01', body:{contents:[{parts:[{text:'hi'},{inlineData:{mimeType:'image/jpeg', data:pad}}]}]}};
+  const t0 = performance.now(); try { const r = await fetch(S+'/ai', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); out.push(name+': '+r.status+' '+(await r.text()).slice(0,120)+' ('+Math.round(performance.now()-t0)+'ms)'); } catch(e){ out.push(name+': FETCH FAILED '+e); } o.textContent = out.join('\n'); };
+(async()=>{ await t('10KB',10); await t('200KB',200); await t('600KB',600); await t('1200KB',1200); o.textContent = out.join('\n') + '\nDONE'; })();
 </script>
