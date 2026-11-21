@@ -143,6 +143,20 @@ ol.steps{padding-left:22px;margin:8px 0 0}ol.steps li{margin:0 0 12px;padding-le
 .ing{display:flex;gap:12px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line);font-size:15.5px}
 .ing .k{width:18px;flex:none;text-align:center;color:var(--acc);font-weight:700}.ing .k.no{color:var(--bad)}
 .ing small{color:var(--mut)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.tile{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px;border-radius:18px;background:var(--soft);text-align:left;cursor:pointer;min-height:118px}
+.tile svg{color:var(--acc);margin-bottom:4px}.tile b{font-size:16px}.tile span{font-size:13px;color:var(--mut);line-height:1.3}
+.tile:active{transform:scale(.98)}
+.qa{display:flex;gap:8px;margin-top:6px}.qa .btn{width:auto;padding:0 22px;height:50px}
+.sugg{display:flex;flex-wrap:wrap;margin-top:8px}
+.tr{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+.tr .m{flex:1;min-width:0;display:flex;flex-direction:column}
+.tr input.tn,.tr input.tq{background:none;border:0;padding:2px 0;border-radius:0;font-size:16px}
+.tr input.tq{font-size:13.5px;color:var(--mut);padding-top:0}
+.tr .tp{display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+.psel{position:relative;display:inline-flex;align-items:center;height:30px;padding:0 10px;border-radius:15px;background:var(--soft);font-size:13px;font-weight:500;border:0;width:auto;background-image:none}
+select.psel{padding-right:10px;-webkit-appearance:none;appearance:none;text-align:center}
+.psel.dt input{position:absolute;inset:0;opacity:0;width:100%;height:100%;padding:0}
 .edit{display:grid;grid-template-columns:1fr 84px 96px 30px;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
 .edit input,.edit select{padding:10px;font-size:15px;border-radius:10px}
 .edit .x{width:30px;height:30px;font-size:16px}
@@ -191,23 +205,27 @@ ol.steps{padding-left:22px;margin:8px 0 0}ol.steps li{margin:0 0 12px;padding-le
   <div class="toast" id="toast"></div>
 </div>
 <script>
+/* Shelf life. Each category has where it's kept and how long it lasts frozen (days).
+   An item is days, or [days, freezerDays, place] where it differs from its category. Days are for unopened food from the day you buy it. */
 const SL = {
-  Veg:{loc:'fridge',frz:240,items:{spinach:5,lettuce:6,rocket:4,'salad leaves':4,'mixed salad':4,salad:4,kale:6,broccoli:6,cauliflower:7,cabbage:14,carrot:21,potato:30,'sweet potato':21,onion:30,'red onion':30,'spring onion':7,shallot:30,garlic:60,ginger:21,tomato:7,'cherry tomato':7,cucumber:7,pepper:10,chilli:10,courgette:7,aubergine:7,mushroom:5,celery:14,leek:10,'green bean':5,'sugar snap':5,'mange tout':5,asparagus:4,avocado:4,'corn on the cob':4,coriander:5,parsley:7,basil:5,mint:7,thyme:10,rosemary:10,dill:5,beansprout:3,'pak choi':4,'butternut squash':30,squash:30,beetroot:14,radish:10,'stir fry veg':4,'stir-fry veg':4,lemongrass:14}},
-  Fruit:{loc:'fridge',frz:240,items:{banana:5,apple:21,orange:14,satsuma:10,lemon:21,lime:21,berries:4,strawberr:4,blueberr:7,raspberr:3,grape:7,mango:5,pineapple:5,pear:7,melon:5,kiwi:10,peach:5,plum:5,pomegranate:14,dates:60}},
-  Meat:{loc:'fridge',frz:120,items:{chicken:2,'chicken breast':2,'chicken thigh':2,'chicken wing':2,'whole chicken':2,mince:2,beef:3,steak:3,lamb:3,pork:3,sausage:3,bacon:7,ham:5,turkey:2,chorizo:21,salami:21,duck:2,'deli meat':4,kebab:2}},
-  Fish:{loc:'fridge',frz:90,items:{salmon:2,fish:2,cod:2,haddock:2,'sea bass':2,prawn:2,shrimp:2,'tuna steak':2,'smoked salmon':7,mackerel:2,basa:2}},
-  'Dairy & eggs':{loc:'fridge',frz:60,items:{egg:21,milk:7,'oat milk':7,'almond milk':7,yogurt:10,yoghurt:10,'greek yogurt':10,'greek yoghurt':10,skyr:10,cheese:21,cheddar:28,mozzarella:5,halloumi:30,feta:14,parmesan:30,'goat cheese':10,butter:30,cream:5,'double cream':5,'sour cream':7,'creme fraiche':7,'cream cheese':10,'cottage cheese':7,paneer:7,labneh:10}},
-  Chilled:{loc:'fridge',frz:60,items:{tofu:7,tempeh:7,hummus:5,houmous:5,pesto:7,'fresh pasta':4,leftover:3,'ready meal':3,soup:4,juice:7,gnocchi:10,dip:5}},
-  Bakery:{loc:'cupboard',frz:90,items:{bread:5,loaf:5,wrap:14,tortilla:14,bagel:5,pitta:5,pita:5,naan:5,roll:3,croissant:3,crumpet:7,brioche:5,muffin:4,sourdough:4}},
-  Cupboard:{loc:'cupboard',frz:0,items:{rice:365,pasta:365,spaghetti:365,penne:365,fusilli:365,linguine:365,noodle:365,oat:180,flour:180,lentil:365,chickpea:730,'kidney bean':730,'black bean':730,'baked bean':730,'butter bean':730,'cannellini':730,'tinned tomato':730,'chopped tomato':730,'canned tomato':730,passata:365,'tomato puree':365,'coconut milk':730,stock:365,'chicken stock':365,'beef stock':365,'stock cube':365,'soy sauce':365,honey:730,'peanut butter':90,'olive oil':365,oil:365,quinoa:365,couscous:365,tuna:730,'tinned tuna':730,sweetcorn:730,cereal:180,granola:180,'protein powder':365,sugar:730,vinegar:730,ketchup:180,mayo:60,mayonnaise:60,'hot sauce':180,sriracha:180,jam:180,nuts:180,almond:180,cashew:180,crisps:60,chocolate:180,'curry paste':90,'coconut cream':730,'maple syrup':365,breadcrumb:180}},
-  Frozen:{loc:'freezer',frz:240,items:{'frozen peas':240,peas:240,'frozen veg':240,'frozen spinach':240,'frozen berries':240,'frozen fruit':240,'ice cream':180,'frozen chips':240,chips:240,'fish fingers':180,'frozen pizza':180,edamame:240}}
+  Veg:{loc:'fridge',frz:240,items:{spinach:4,'baby spinach':4,lettuce:[5,0],'iceberg lettuce':[7,0],'romaine':[6,0],'little gem':[6,0],rocket:[4,0],'salad leaves':[4,0],'mixed salad':[4,0],'bagged salad':[4,0],salad:[4,0],watercress:[3,0],kale:6,'cavolo nero':5,'spring greens':5,broccoli:6,tenderstem:5,cauliflower:7,cabbage:14,'red cabbage':14,'savoy cabbage':10,'brussels sprout':7,sprout:7,carrot:21,parsnip:21,potato:[30,0,'cupboard'],'new potato':[14,0,'cupboard'],'baby potato':[14,0,'cupboard'],'sweet potato':[21,0,'cupboard'],onion:[30,180,'cupboard'],'red onion':[30,180,'cupboard'],'white onion':[30,180,'cupboard'],shallot:[30,180,'cupboard'],'spring onion':7,leek:10,garlic:[60,180,'cupboard'],ginger:21,tomato:7,'cherry tomato':7,'vine tomato':7,'plum tomato':7,'salad tomato':7,cucumber:[7,0],pepper:7,'bell pepper':7,'red pepper':7,'green pepper':7,'yellow pepper':7,'romano pepper':7,chilli:[10,180],'red chilli':[10,180],'green chilli':[10,180],'scotch bonnet':[10,180],courgette:7,zucchini:7,aubergine:7,eggplant:7,mushroom:5,'chestnut mushroom':5,'button mushroom':5,'portobello':5,'shiitake':5,'oyster mushroom':4,celery:14,celeriac:21,asparagus:4,'green bean':5,'fine bean':5,'runner bean':5,'broad bean':4,'mange tout':5,mangetout:5,'sugar snap':5,'pak choi':4,'bok choy':4,beansprout:[2,0],'bean sprout':[2,0],'corn on the cob':4,'baby corn':5,beetroot:14,radish:10,'butternut squash':[30,240,'cupboard'],squash:[30,240,'cupboard'],pumpkin:[30,240,'cupboard'],swede:21,turnip:14,fennel:7,artichoke:5,okra:4,'fresh peas':4,'stir fry veg':4,'stir-fry veg':4,'stir fry':4,'stir-fry':4,'veg pack':5,vegetable:7,veg:7}},
+  Herbs:{loc:'fridge',frz:180,items:{coriander:7,cilantro:7,parsley:7,basil:5,mint:7,dill:5,chives:7,rosemary:14,thyme:14,sage:10,tarragon:7,lemongrass:14,'fresh herbs':7,'curry leaves':10}},
+  Fruit:{loc:'fridge',frz:240,items:{banana:[5,180,'cupboard'],apple:21,pear:7,orange:14,satsuma:10,clementine:10,mandarin:10,'easy peeler':10,lemon:21,lime:21,grapefruit:14,berries:4,strawberr:4,blueberr:7,raspberr:3,blackberr:3,grape:7,cherries:5,cherry:5,mango:[5,240,'cupboard'],pineapple:[5,240,'cupboard'],melon:[5,0,'cupboard'],watermelon:[7,0,'cupboard'],kiwi:10,peach:5,nectarine:5,plum:5,apricot:5,pomegranate:14,fig:4,dates:[90,0,'cupboard'],'passion fruit':7,lychee:5,papaya:5,rhubarb:7,coconut:[14,0,'cupboard'],avocado:[4,180,'cupboard'],'fruit salad':3,fruit:5}},
+  Meat:{loc:'fridge',frz:120,items:{chicken:2,'chicken breast':2,'chicken thigh':2,'chicken wing':2,'chicken drumstick':2,'chicken leg':2,'whole chicken':2,'mini fillet':2,'chicken fillet':2,mince:[2,90],'beef mince':[2,90],'lamb mince':[2,90],'pork mince':[2,90],'turkey mince':[2,90],'chicken mince':[2,90],steak:3,sirloin:3,ribeye:3,'rump steak':3,fillet:3,'braising steak':3,'stewing steak':3,'diced beef':3,beef:3,'beef joint':3,brisket:3,lamb:3,'lamb chop':3,'lamb shank':3,'leg of lamb':3,'diced lamb':3,pork:3,'pork chop':3,'pork belly':3,'pork loin':3,'pork shoulder':3,'pulled pork':4,gammon:[7,60],sausage:[4,90],chipolata:[4,90],burger:[3,120],meatball:[3,90],bacon:[7,60],'smoked bacon':[7,60],pancetta:[14,60],lardon:[10,60],ham:[4,60],'cooked ham':[4,60],turkey:2,'turkey breast':2,duck:2,'duck breast':2,venison:3,liver:[1,90],goat:3,mutton:3,veal:3,ribs:3,chorizo:[28,60],salami:[28,60],pepperoni:[28,60],prosciutto:[14,60],'parma ham':[14,60],'serrano':[14,60],pastrami:[7,60],'deli meat':[4,60],'sliced chicken':[4,60],'cooked chicken':[3,90],'roast chicken':[3,90],'rotisserie':[3,90],'chicken tikka':[3,90],kebab:[2,90],doner:[2,90],'hot dog':[14,60],frankfurter:[14,60],'black pudding':[14,60],haggis:[14,90],'beef jerky':[180,0,'cupboard'],jerky:[180,0,'cupboard'],biltong:[90,0,'cupboard'],meat:2}},
+  Fish:{loc:'fridge',frz:90,items:{salmon:2,'salmon fillet':2,'smoked salmon':[10,60],'hot smoked salmon':[10,60],cod:2,haddock:2,'smoked haddock':3,'sea bass':2,seabass:2,'sea bream':2,trout:2,'smoked trout':[10,60],mackerel:2,'smoked mackerel':[10,60],'tuna steak':2,prawn:2,'king prawn':2,'cooked prawn':2,shrimp:2,scallop:1,mussel:1,clam:1,squid:2,calamari:2,crab:1,lobster:1,basa:2,pollock:2,hake:2,plaice:2,sole:2,monkfish:2,'fish cake':3,'fish pie':2,fish:2}},
+  'Dairy & eggs':{loc:'fridge',frz:60,items:{egg:[21,0],'egg white':[7,90],milk:7,'semi skimmed':7,'whole milk':7,'skimmed milk':7,'skimmed':7,'lactose free':10,buttermilk:10,'milkshake':7,yogurt:10,yoghurt:10,'greek yogurt':10,'greek yoghurt':10,'greek style':10,'natural yogurt':10,'protein yogurt':14,skyr:14,kefir:14,'fromage frais':10,quark:14,cheese:[28,180],cheddar:[42,180],'red leicester':[42,180],'double gloucester':[42,180],'wensleydale':[28,180],gouda:[42,180],edam:[42,180],emmental:[42,180],gruyere:[42,180],'manchego':[42,180],parmesan:[60,180],'grana padano':[60,180],pecorino:[60,180],mozzarella:[7,60],burrata:[4,0],halloumi:[30,180],feta:[21,60],'goat cheese':14,'goats cheese':14,brie:14,camembert:14,stilton:21,'blue cheese':21,'cream cheese':14,philadelphia:14,'soft cheese':14,mascarpone:10,ricotta:7,'cottage cheese':7,paneer:[7,90],'grated cheese':[14,120],'cheese slices':21,'string cheese':21,babybel:30,'cheese string':21,butter:[60,180],'unsalted butter':[60,180],'salted butter':[60,180],margarine:60,'lurpak':[60,180],cream:7,'single cream':7,'double cream':7,'whipping cream':7,'clotted cream':10,'sour cream':10,'creme fraiche':14,'crème fraîche':14,custard:7,'rice pudding':7,'chocolate mousse':10}},
+  Chilled:{loc:'fridge',frz:60,items:{tofu:[21,90],'smoked tofu':[21,90],tempeh:[14,90],hummus:7,houmous:7,'fresh pesto':7,guacamole:3,tzatziki:5,coleslaw:5,'potato salad':4,'pasta salad':3,'fresh pasta':[10,90],ravioli:[10,90],tortellini:[14,90],gnocchi:[30,90],soup:[5,90],'fresh soup':[5,90],'ready meal':[3,90],'chilled pizza':[5,90],quiche:[4,60],'pork pie':7,'sausage roll':[4,90],'scotch egg':5,sandwich:[2,0],'meal deal':[2,0],juice:7,'orange juice':7,'apple juice':7,smoothie:5,kimchi:60,'dip':5,'fresh stock':[7,90],pastry:[14,90],'puff pastry':[14,90],'shortcrust':[14,90],filo:[14,90],'pizza dough':[7,60],'cookie dough':[14,60],leftover:[3,90],'cooked rice':[1,30],'cooked pasta':[3,60],'falafel':[5,90],'bhaji':[4,90],'samosa':[4,90],'spring roll':[4,90],'dumpling':[5,90],'kombucha':60,'oat drink':[7,0],'iced coffee':10}},
+  Bakery:{loc:'cupboard',frz:90,items:{bread:5,loaf:5,'sliced bread':5,'white bread':5,'brown bread':5,wholemeal:5,'seeded':5,sourdough:4,baguette:2,ciabatta:3,focaccia:3,roll:3,'bread roll':3,brioche:7,bagel:5,wrap:14,tortilla:14,pitta:5,pita:5,naan:5,flatbread:7,'english muffin':7,muffin:4,crumpet:7,croissant:3,'pain au chocolat':3,teacake:5,'hot cross bun':5,pancake:5,scone:3,cake:5,doughnut:2,bun:3,'burger bun':5,'hot dog roll':5,'garlic bread':[5,90,'fridge'],'chapati':7,roti:7,'paratha':[7,90,'freezer']}},
+  Cupboard:{loc:'cupboard',frz:0,items:{rice:365,'basmati':365,'brown rice':180,'jasmine rice':365,'microwave rice':180,'rice pouch':180,'risotto rice':365,arborio:365,pasta:365,spaghetti:365,penne:365,fusilli:365,linguine:365,tagliatelle:365,macaroni:365,rigatoni:365,orzo:365,'lasagne sheet':365,lasagne:[3,90,'fridge'],noodle:365,'egg noodle':365,'rice noodle':365,udon:90,'instant noodle':180,'pot noodle':180,couscous:365,quinoa:365,bulgur:365,'rolled oat':180,oat:180,porridge:180,granola:180,muesli:180,cereal:180,cornflake:180,weetabix:180,flour:180,'plain flour':180,'self raising':180,'bread flour':180,cornflour:365,yeast:365,'baking powder':365,'bicarbonate':730,sugar:730,'icing sugar':730,'brown sugar':730,lentil:365,'red lentil':365,chickpea:730,'kidney bean':730,'black bean':730,'baked bean':730,'butter bean':730,cannellini:730,'pinto bean':730,'borlotti':730,'mixed bean':730,'refried bean':730,'tinned tomato':730,'chopped tomato':730,'canned tomato':730,'tin of tomato':730,passata:365,'tomato puree':365,'tomato purée':365,'tomato paste':365,'sun dried tomato':365,'coconut milk':730,'coconut cream':730,'tinned tuna':1095,tuna:1095,sardine:1095,'tinned mackerel':1095,'tinned salmon':1095,anchov:730,sweetcorn:730,'tinned peas':730,'tinned soup':730,'canned soup':730,'tinned fruit':730,'evaporated milk':365,'condensed milk':365,'long life milk':180,uht:180,'oat milk':180,'almond milk':180,'soya milk':180,'soy milk':180,'coconut water':180,stock:365,'chicken stock':365,'beef stock':365,'veg stock':365,'stock cube':365,'stock pot':365,gravy:365,'olive oil':540,'vegetable oil':540,'sunflower oil':540,'rapeseed oil':540,'sesame oil':365,'coconut oil':540,oil:540,vinegar:730,'soy sauce':730,'light soy':730,'dark soy':730,ketchup:365,mayonnaise:180,mayo:180,mustard:365,'brown sauce':365,'bbq sauce':365,'barbecue sauce':365,'hot sauce':365,sriracha:365,'sweet chilli sauce':365,'chilli sauce':365,worcestershire:730,'fish sauce':730,'oyster sauce':365,hoisin:365,teriyaki:365,'curry paste':365,'curry sauce':365,'pasta sauce':365,'pesto':365,'salsa':365,'tahini':365,jam:365,marmalade:365,honey:730,'peanut butter':270,'almond butter':270,nutella:270,'chocolate spread':270,'maple syrup':365,'golden syrup':730,syrup:365,nuts:180,'mixed nuts':180,almond:180,cashew:180,walnut:180,peanut:180,pistachio:180,hazelnut:180,'pumpkin seed':180,'sunflower seed':180,'chia seed':365,'flaxseed':365,raisin:270,sultana:270,'dried fruit':270,'dried apricot':270,'dried mango':270,olives:365,olive:365,gherkin:365,pickle:365,caper:365,'jalapeno slices':365,crisps:60,crackers:90,oatcake:90,'rice cake':90,biscuit:90,cookie:60,chocolate:180,'dark chocolate':365,popcorn:180,'cereal bar':180,'protein bar':180,'granola bar':180,'protein powder':365,tea:540,'green tea':540,coffee:365,'instant coffee':365,'coffee beans':180,'hot chocolate':365,cocoa:365,breadcrumb:180,panko:180,stuffing:365,'custard powder':365,jelly:365,gelatine:730,'cous cous':365,'ramen':180,'tortilla chips':60,'nachos':60,'pretzels':90,'rice crispies':180}},
+  Drinks:{loc:'cupboard',frz:0,items:{'long life juice':180,cola:270,'fizzy drink':270,lemonade:270,'sparkling water':365,'still water':365,water:365,'energy drink':365,'sports drink':365,beer:180,lager:180,cider:180,wine:365,prosecco:365,spirits:730,'cordial':365}},
+  Frozen:{loc:'freezer',frz:240,items:{'frozen peas':240,peas:240,'petit pois':240,'frozen veg':240,'mixed veg':240,'frozen spinach':240,'frozen berries':240,'frozen fruit':240,'frozen sweetcorn':240,'frozen broccoli':240,'frozen mango':240,'frozen avocado':240,'frozen herbs':240,'ice cream':180,'ice lolly':180,'frozen yogurt':180,'frozen chips':240,chips:240,'oven chips':240,fries:240,'hash brown':180,'potato waffle':180,'roast potatoes':240,'fish finger':180,'breaded fish':180,'chicken nugget':180,nugget:180,'chicken goujon':180,'frozen pizza':180,'yorkshire pudding':180,'frozen prawn':180,edamame:240,quorn:180,'quorn mince':180,'quorn pieces':180,'veggie mince':180,'veggie burger':180,'veggie sausage':180,'frozen mince':120,'frozen chicken':240,'frozen fish':180,'ice':365}}
 };
 const LOC_OVR = {banana:'cupboard',potato:'cupboard','sweet potato':'cupboard',onion:'cupboard','red onion':'cupboard',shallot:'cupboard',garlic:'cupboard','butternut squash':'cupboard',squash:'cupboard',avocado:'cupboard',dates:'cupboard',pineapple:'cupboard',mango:'cupboard',melon:'cupboard'};
 const SPICES = ['salt','sea salt','black pepper','white pepper','cumin','cumin seeds','paprika','smoked paprika','turmeric','chilli powder','chilli flakes','chili flakes','chili powder','garam masala','curry powder','ground coriander','coriander powder','coriander seeds','cinnamon','oregano','dried oregano','dried thyme','dried rosemary','dried basil','dried parsley','dried dill','mixed herbs','italian seasoning','herbes de provence','cajun','five spice','chinese five spice','nutmeg','ground ginger','ginger powder','garlic powder','garlic granules','onion powder','bay leaves','bay leaf','cardamom','cloves','fennel seeds','mustard seeds','sumac',"za'atar",'zaatar','peri peri','piri piri','fajita seasoning','taco seasoning','cayenne','allspice','star anise','saffron','tandoori masala','tandoori','chaat masala','fenugreek','nigella seeds','baharat','ras el hanout','jerk seasoning','msg','sesame seeds','vanilla','everything seasoning','steak seasoning','lemon pepper'];
 const COMMON_SPICES = ['Salt','Black pepper','Cumin','Paprika','Smoked paprika','Turmeric','Chilli powder','Chilli flakes','Garam masala','Curry powder','Ground coriander','Cinnamon','Oregano','Mixed herbs','Garlic powder','Onion powder','Five spice','Cajun','Peri peri','Bay leaves','Cardamom','Nutmeg','Ground ginger','Dried thyme','Sumac',"Za'atar",'Fajita seasoning','Cayenne'];
 const COMMON_FOOD = ['Chicken breast','Beef mince','Salmon','Eggs','Milk','Greek yogurt','Spinach','Onions','Garlic','Peppers','Tomatoes','Broccoli','Potatoes','Bananas','Bread','Rice','Pasta','Cheddar','Tinned tomatoes','Wraps','Lemons','Mushrooms'];
 const FOOD = {};
-for (const [cat,def] of Object.entries(SL)) for (const [k,d] of Object.entries(def.items)) FOOD[k] = {d, frz:def.frz, cat, loc:LOC_OVR[k]||def.loc};
+for (const [cat,def] of Object.entries(SL)) for (const [k,v] of Object.entries(def.items)){ const a = Array.isArray(v) ? v : [v]; FOOD[k] = {d:a[0], frz:a[1]!=null ? a[1] : def.frz, cat, loc:a[2] || LOC_OVR[k] || def.loc}; }
 const RECIPES = [
  {id:'r1',n:'Garlic chicken & spinach rice',t:30,p:40,tags:['gf','df'],i:[['Chicken breast','chicken'],['Rice','rice'],['Spinach','spinach|kale'],['Garlic','garlic'],['Onion','onion',1],['Lemon','lemon',1]],s:['paprika','cumin'],st:['Rinse the rice and cook it in salted water.','Dice the chicken and season with paprika, cumin, salt and pepper.','Fry the chicken in a little oil for 6–8 min until cooked through, adding onion and garlic for the last 2 min.','Stir in the spinach until it wilts, then fold through the rice. Finish with a squeeze of lemon.']},
  {id:'r2',n:'Chicken fajita wraps',t:25,p:36,tags:[],i:[['Chicken','chicken'],['Peppers','pepper'],['Onion','onion'],['Wraps','wrap|tortilla'],['Cheese','cheese|cheddar',1],['Yogurt or sour cream','yogurt|yoghurt|sour cream|skyr',1]],s:['paprika','cumin','chilli powder|chilli flakes|cayenne|fajita'],st:['Slice the chicken, peppers and onion into strips.','Toss the chicken with paprika, cumin, chilli, salt and a little oil.','Fry the chicken in a hot pan for 5 min, add the veg and cook 5 more until charred at the edges.','Warm the wraps and fill with the chicken, cheese and a spoon of yogurt.']},
@@ -255,21 +273,28 @@ function dueLong(d){ if(d<0) return d===-1?'Expired yesterday':`Expired ${-d} da
 function dueShort(d){ if(d<0) return 'Expired'; if(d===0) return 'Today'; if(d===1) return 'Tomorrow'; if(d<14) return d+' days'; if(d<60) return Math.round(d/7)+' wks'; if(d<365) return Math.round(d/30)+' mo'; return '1 yr+'; }
 function dueClass(d){ return d<0?'bad':(d<=state.prefs.warn?'soon':'ok'); }
 function classify(name){
-  const n = String(name).toLowerCase().trim();
+  const n = String(name).toLowerCase().replace(/[’']/g,'').trim();
   let bf=null, bl=0; for (const k in FOOD) if (n.includes(k) && k.length>bl){ bf=k; bl=k.length; }
   let sl=0; for (const s of SPICES) if (n.includes(s) && s.length>sl) sl=s.length;
   if (sl>bl) return {spice:true};
-  if (bf) return {spice:false, ...FOOD[bf]};
-  return {spice:false, d:7, frz:90, cat:'Other', loc:'fridge'};
+  const base = bf ? {spice:false, ...FOOD[bf]} : {spice:false, d:7, frz:90, cat:'Other', loc:'fridge'};
+  if (/\bfrozen\b/.test(n) && base.cat!=='Frozen') return {...base, cat:'Frozen', loc:'freezer', d:base.frz || 180, frz:base.frz || 180};
+  if (/\b(tinned|canned|tin of|can of)\b/.test(n) && base.cat!=='Cupboard') return {...base, cat:'Cupboard', loc:'cupboard', d:730, frz:0};
+  if (/\b(dried|long life|uht)\b/.test(n) && ['Fruit','Veg','Herbs','Dairy & eggs'].includes(base.cat)) return {...base, cat:'Cupboard', loc:'cupboard', d:270, frz:0};
+  return base;
 }
-function defaultExp(name, loc){
-  const c = classify(name);
-  if (c.cat==='Frozen') return addDays(c.d);
-  if (loc==='freezer') return addDays(c.frz || 90);
-  if (c.cat==='Cupboard') return addDays(c.d);
-  if (loc==='cupboard' && c.loc==='fridge') return addDays(Math.max(1, Math.round(c.d/2)));
-  return addDays(c.d);
+// Days a food lasts from today in a given place: frozen food keeps its frozen life; moving food to the freezer
+// uses its freezer life; fridge food left in the cupboard lasts about half as long.
+function shelfDays(name, loc){
+  const c = classify(name); if (c.spice) return 365;
+  loc = loc || c.loc;
+  if (loc==='freezer') return c.cat==='Frozen' ? c.d : (c.frz || 60);
+  if (c.cat==='Frozen') return 1;                       // thawed
+  if (loc==='cupboard' && c.loc==='fridge') return Math.max(1, Math.round(c.d/2));
+  if (loc==='fridge' && c.loc==='cupboard' && c.cat==='Bakery') return c.d + 2;
+  return c.d;
 }
+function defaultExp(name, loc){ return addDays(shelfDays(name, loc)); }
 function parseToken(t){
   t = t.trim().replace(/\s+/g,' ').replace(/^[-•*]\s*/,''); if(!t) return null;
   let qty='', name=t, m;
@@ -435,7 +460,7 @@ function foodKeysIn(s){
   const n = ' '+normName(s)+' '; let v = _fkc.get(n); if (v) return v;
   if (!_fk) _fk = [...new Set(Object.keys(FOOD).map(k=>normName(k)))];
   const ks = _fk.filter(k=>n.includes(' '+k+' '));
-  v = ks.filter(k=>!ks.some(o=>o!==k && o.endsWith(' '+k))); if (_fkc.size > 5000) _fkc.clear(); _fkc.set(n, v); return v;
+  v = ks.filter(k=>!ks.some(o=>o!==k && (o.endsWith(' '+k) || o.startsWith(k+' ')))); if (_fkc.size > 5000) _fkc.clear(); _fkc.set(n, v); return v;
 }
 const MADE_INTO = ['seed','granule','salt','ketchup','sauce','puree','paste','passata','soup','juice','powder','powdered','sundried','pickled','jam','crisp','stock','cube','oil','vinegar','gravy','seasoning','mayo','mayonnaise','dip','salsa','relish','chutney','smoothie','cake','pie','pizza','sandwich','flavour','flavoured','flavor','flavored','bread','noodle','bar','cereal','drink','tea','spread','syrup','extract','essence','flake','granule','fried','ready','meal','kit','mix','butter','milk','cream','yogurt','yoghurt','icecream'];
 const FORMS = [[/\b(tinned|canned|chopped|peeled|plum|dried|sun)\b/, /tomatoe?$/], [/\bsmoked\b/, /^(salmon|fish)$/], [/\bdried\b/, /^(mushroom|chilli|apricot|mango|fruit|berr\w*)$/], [/\b(sweet)\b/, /^potato$/], [/\bground\b/, /^(ginger|garlic|almond|coriander|cinnamon|nutmeg|cumin|clove)$/], [/\b(dried|ground)\b/, /^(herb|parsley|basil|oregano|thyme|rosemary|mint|dill|coriander)$/], [/\bspring\b/, /^onion$/], [/\b(coconut|peanut|almond|nut|cashew|ice)\b/, /^(milk|butter|cream)$/], [/\bcheese\b/, /^cream$/], [/\b(baked|kidney|black|green|butter|broad|runner|coffee|jelly)\b/, /^$/]];
@@ -524,8 +549,10 @@ const ME_LS = 'larder-me';
 function getMe(){ try { const m = JSON.parse(localStorage.getItem(ME_LS)||'{}'); return {name:'', town:'', ...m, feat:{plan:true, diary:true, spices:true, ...(m.feat||{})}}; } catch(e){ return {name:'', town:'', feat:{plan:true, diary:true, spices:true}}; } }
 function setMe(m){ try { localStorage.setItem(ME_LS, JSON.stringify(m)); } catch(e){} }
 const portionsTxt = n => n > 0 ? fmtQty({n, d:'n', w:'portion'}) : 'none';
+let AI_BEST = false;
 async function gemini(prompt, useUrl, image, onText, schema, onlyModel){
-  const g = getGem(); const models = onlyModel ? [onlyModel] : [g.model||'gemini-3.5-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'].filter((v,i,a)=>a.indexOf(v)===i);
+  const g = getGem(), first = AI_BEST && g.best ? 'gemini-4-argon' : (g.model||'gemini-3.5-flash');
+  const models = onlyModel ? [onlyModel] : [first, g.model||'gemini-3.5-flash', ...(g.model==='gemini-3.8-flash' || g.best ? ['gemini-3.8-flash'] : []), 'gemini-3.5-flash', 'gemini-3.1-flash-lite'].filter((v,i,a)=>a.indexOf(v)===i);
   let last = {status:0, message:'No response'};
   for (const m of models){
     const parts = image ? [{inline_data:{mime_type:'image/jpeg', data:image}}, {text:prompt}] : [{text:prompt}];
@@ -540,7 +567,7 @@ async function gemini(prompt, useUrl, image, onText, schema, onlyModel){
     }
     if (res.text) return res.text;
     last = res.err;
-    if (![0,-4,404,429,500,503].includes(last.status)) break;
+    if (![0,-4,403,404,429,500,503].includes(last.status) && !(last.status===400 && /billing|not (found|supported)|model/i.test(last.message||''))) break;
   }
   throw last;
 }
@@ -610,7 +637,7 @@ function parseJSON(txt){
   throw {status:-2};
 }
 async function askJSON(prompt, o){
-  o = o || {};
+  o = o || {}; AI_BEST = !!o.best;
   try { return parseJSON(await askAI(prompt, o.url, o.image, o.onText, o.schema)); }
   catch(e){
     if (!(e && (e.status===-2 || e instanceof SyntaxError))) throw e;
@@ -872,10 +899,10 @@ function logEv(t, it){
   state.log.push({id:uid(), t, n:it.name, c:it.cat||'', d:iso(today()), ...(it.rid ? {rid:it.rid} : {})});
   const cut = addDays(-400); if (state.log.length > 50 && state.log[0].d < cut) state.log = state.log.filter(x=>x.d >= cut);
 }
-const AISLES = ['Fruit & veg','Bakery','Meat & fish','Dairy & eggs','Chilled','Food cupboard','Herbs & spices','Frozen','Other'];
+const AISLES = ['Fruit & veg','Bakery','Meat & fish','Dairy & eggs','Chilled','Food cupboard','Herbs & spices','Drinks','Frozen','Other'];
 function aisleOf(name){
   const c = classify(name); if (c.spice) return 'Herbs & spices';
-  return ({Veg:'Fruit & veg', Fruit:'Fruit & veg', Meat:'Meat & fish', Fish:'Meat & fish', 'Dairy & eggs':'Dairy & eggs', Chilled:'Chilled', Bakery:'Bakery', Cupboard:'Food cupboard', Frozen:'Frozen'})[c.cat] || 'Other';
+  return ({Veg:'Fruit & veg', Fruit:'Fruit & veg', Herbs:'Fruit & veg', Drinks:'Drinks', Meat:'Meat & fish', Fish:'Meat & fish', 'Dairy & eggs':'Dairy & eggs', Chilled:'Chilled', Bakery:'Bakery', Cupboard:'Food cupboard', Frozen:'Frozen'})[c.cat] || 'Other';
 }
 const STORES = {
   tesco:['Tesco', q=>`https://www.tesco.com/groceries/en-GB/search?query=${q}`],
@@ -1346,34 +1373,83 @@ function sheetItem(id){
 }
 
 /* adding food */
-function sheetAdd(){
+/* ---------- daily AI limits (stop one phone running up the bill) ---------- */
+const LIMITS = {photo:5, gen:10}, USE_LS = 'larder-usage';
+function usage(){ try { const u = JSON.parse(localStorage.getItem(USE_LS)||'{}'); return u.d===iso(today()) ? u : {d:iso(today()), photo:0, gen:0}; } catch(e){ return {d:iso(today()), photo:0, gen:0}; } }
+const left = k => Math.max(0, LIMITS[k] - (usage()[k]||0));
+function spend(k){ const u = usage(); u[k] = (u[k]||0) + 1; try { localStorage.setItem(USE_LS, JSON.stringify(u)); } catch(e){} }
+function canSpend(k){ if (left(k) > 0) return true; toast(k==='photo' ? `That’s today’s ${LIMITS.photo} photos used. More tomorrow.` : `That’s today’s ${LIMITS.gen} AI recipes used. More tomorrow.`); return false; }
+
+/* ---------- adding food ---------- */
+const CAM = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.5"/></svg>';
+const BAR = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7V5h3M17 5h3v2M20 17v2h-3M7 19H4v-2M8 9v6M11 9v6M14 9v6M17 9v6"/></svg>';
+function trayRow(name, qty, loc, days){ const c = classify(name); loc = loc || c.loc; return {name:cap(String(name).trim()), qty:qty||'', loc, spice:c.spice, exp: days != null ? addDays(days) : defaultExp(name, loc), auto: days == null}; }
+const fmtD = d => { const k = Math.round((parseD(d)-today())/86400000); return k<=0 ? 'Today' : k===1 ? 'Tomorrow' : k<14 ? parseD(d).toLocaleDateString('en-GB',{weekday:'short', day:'numeric', month:'short'}) : k<60 ? `${Math.round(k/7)} weeks` : k<365 ? `${Math.round(k/30)} months` : 'Over a year'; };
+function trayHTML(t){
+  return t.map((r,i)=>`<div class="tr" data-i="${i}"><div class="m"><input class="tn" data-f="name" value="${esc(r.name)}" aria-label="Name"><input class="tq" data-f="qty" value="${esc(r.qty)}" placeholder="amount" aria-label="Amount"></div>
+    ${r.spice ? '<span class="tp mut sm">Spices &amp; basics</span>' : `<div class="tp"><select class="psel" data-f="loc" aria-label="Kept in">${LOCS.map(([k,l])=>`<option value="${k}" ${r.loc===k?'selected':''}>${l}</option>`).join('')}</select><label class="psel dt">${fmtD(r.exp)}<input type="date" data-f="exp" value="${r.exp}" aria-label="Use by"></label></div>`}
+    <button class="x" data-rm="${i}" aria-label="Remove ${esc(r.name)}">×</button></div>`).join('');
+}
+function foodSuggest(q){
+  q = q.toLowerCase().trim(); if (q.length < 2) return [];
+  const pool = [...new Set([...state.log.slice(-200).map(x=>x.n), ...COMMON_FOOD, ...Object.keys(FOOD).filter(k=>k.length>2).map(cap)])];
+  const starts = pool.filter(n=>n.toLowerCase().startsWith(q)), has = pool.filter(n=>!n.toLowerCase().startsWith(q) && n.toLowerCase().includes(q));
+  return [...starts, ...has].slice(0, 5);
+}
+function sheetAdd(rows, note){
+  const tray = (rows||[]).filter(r=>r && r.name).map(r=>r.exp || r.days != null ? {...trayRow(r.name, r.qty, r.loc, r.days != null ? r.days : Math.round((parseD(r.exp)-today())/86400000)), auto:false} : trayRow(r.name, r.qty, r.loc));
   const can = aiAvailable();
+  const inK = new Set(state.items.map(it=>normName(it.name)));
+  const again = [...new Set(state.log.filter(x=>(x.t==='used'||x.t==='bin') && x.d >= addDays(-45)).reverse().map(x=>x.n))].filter(n=>!inK.has(normName(n))).slice(0, 12);
   openSheet(`${head('Add food')}
-    <div class="rows" style="margin-top:12px">
-      <label class="row" style="cursor:pointer"><div class="m"><div class="n">Photo of your shopping</div><div class="s">${can ? 'Bags, the fridge, or a receipt. Everything gets logged.' : 'Needs your free Gemini key in Settings'}</div></div><span class="chev">›</span>${can ? '<input type="file" accept="image/*" id="aPhoto" hidden>' : ''}</label>
-      <button class="row" id="aScan"><div class="m"><div class="n">Scan barcodes</div><div class="s">One after another</div></div><span class="chev">›</span></button>
+    <div class="tiles">
+      <label class="tile">${CAM}<b>Snap your shopping</b><span>${can ? `Bags, fridge or receipt · ${left('photo')} left today` : 'Turn on AI in Settings'}</span>${can ? '<input type="file" accept="image/*" id="aPhoto" hidden>' : ''}</label>
+      <button class="tile" id="aScan">${BAR}<b>Scan barcodes</b><span>One after another</span></button>
     </div>
-    <label class="f">Or type it in</label>
-    <textarea id="aText" placeholder="One per line, e.g.&#10;500g chicken breast&#10;6 eggs&#10;spinach"></textarea>
-    <p class="note" id="aMsg"></p>
-    <div class="btns"><button class="btn pri" id="aGo">Add</button></div>`, el=>{
-    const ph = el.querySelector('#aPhoto'); if (ph) ph.onchange = ev=>{ const f = ev.target.files[0]; if (f) shopPhoto(f, el.querySelector('#aMsg')); };
-    if (!can) el.querySelector('label.row').onclick = ()=>sheetSettings('ai');
-    el.querySelector('#aScan').onclick = ()=>openScan();
-    el.querySelector('#aGo').onclick = async ()=>{
-      const t = el.querySelector('#aText').value.trim(); if (!t) return;
-      const lines = t.split(/\n|,(?![^(]*\))/).map(parseToken).filter(Boolean);
-      if ((t.length > 400 || /£|\d+\.\d{2}\b/.test(t)) && can){
-        const m = el.querySelector('#aMsg'); m.innerHTML = '<span class="spin"></span>Reading your list…';
-        try { const j = await askJSON(scanPrompt(t), {schema:S_SCAN}); return sheetReview((j.items||[]).map(x=>({name:cap(String(x.name||'').trim()), qty:String(x.qty||'').trim()}))); }
-        catch(e){ m.textContent = aiErrMsg(e); return; }
-      }
-      sheetReview(lines);
+    <p class="note" id="aMsg">${note ? esc(note) : ''}</p>
+    <div class="qa"><input type="text" id="aIn" placeholder="Type food, e.g. 500g chicken" autocomplete="off" autocapitalize="sentences" enterkeyhint="done"><button class="btn pri" id="aPlus" aria-label="Add">Add</button></div>
+    <div class="sugg" id="aSug"></div>
+    ${again.length ? `<div id="aAgain"><p class="f" style="margin:16px 0 4px;font-size:13.5px;color:var(--mut)">Buy again</p><div class="pills">${again.map(n=>`<button class="pill" data-again="${esc(n)}">+ ${esc(n)}</button>`).join('')}</div></div>` : ''}
+    <div id="aTray" class="tray"></div>
+    <div class="btns" id="aGoW" style="display:none"><button class="btn pri" id="aGo">Add</button></div>`, el=>{
+    const tEl = el.querySelector('#aTray'), go = el.querySelector('#aGo'), goW = el.querySelector('#aGoW'), inp = el.querySelector('#aIn'), sug = el.querySelector('#aSug'), msg = el.querySelector('#aMsg');
+    const draw = () => { tEl.innerHTML = tray.length ? `<div class="sec" style="margin-top:22px"><h2>Adding</h2><span class="mut sm">Check the dates</span></div>${trayHTML(tray)}` : '';
+      goW.style.display = tray.length ? '' : 'none'; go.textContent = `Add ${plural(tray.length, 'item')} to kitchen`; };
+    const push = text => { String(text).split(/\n|,(?![^(]*\))/).map(parseToken).filter(Boolean).forEach(t=>{ tray.push(trayRow(t.name, t.qty)); }); draw(); };
+    draw();
+    el._tray = tray; el._draw = draw;
+    const ph = el.querySelector('#aPhoto'); if (ph) ph.onchange = ev=>{ const f = ev.target.files[0]; ev.target.value = ''; if (f && canSpend('photo')) shopPhoto(f, msg, rs=>{ rs.forEach(r=>tray.push({...trayRow(r.name, r.qty, r.loc, r.days), auto:r.days==null})); draw(); el.querySelector('.tile span').textContent = `Bags, fridge or receipt · ${left('photo')} left today`; }); };
+    if (!can) el.querySelector('label.tile').onclick = ()=>sheetSettings('ai');
+    el.querySelector('#aScan').onclick = ()=>{ ui.trayKeep = tray.slice(); openScan(); };
+    const add = () => { const v = inp.value.trim(); if (!v) return; push(v); inp.value = ''; sug.innerHTML = ''; inp.focus(); };
+    el.querySelector('#aPlus').onclick = add;
+    inp.onkeydown = ev=>{ if (ev.key==='Enter'){ ev.preventDefault(); add(); } };
+    inp.oninput = ()=>{ const t = parseToken(inp.value) || {name:''}; const s = foodSuggest(t.name||'');
+      sug.innerHTML = s.length && inp.value.trim() ? s.map(n=>`<button class="pill" data-sg="${esc(n)}">${esc(n)}</button>`).join('') : ''; };
+    sug.onclick = ev=>{ const b = ev.target.closest('[data-sg]'); if (!b) return; const t = parseToken(inp.value) || {qty:''}; tray.push(trayRow(b.dataset.sg, t.qty)); inp.value = ''; sug.innerHTML = ''; draw(); inp.focus(); };
+    const ag = el.querySelector('#aAgain'); if (ag) ag.onclick = ev=>{ const b = ev.target.closest('[data-again]'); if (!b) return; tray.push(trayRow(b.dataset.again, '')); b.remove(); draw(); };
+    tEl.oninput = ev=>{ const row = ev.target.closest('[data-i]'), f = ev.target.dataset.f; if (!row || !f) return; const r = tray[+row.dataset.i];
+      if (f==='loc'){ r.loc = ev.target.value; r.exp = defaultExp(r.name, r.loc); draw(); }
+      else if (f==='exp'){ if (ev.target.value){ r.exp = ev.target.value; r.auto = false; draw(); } }
+      else if (f==='name'){ r.name = ev.target.value; }
+      else r[f] = ev.target.value; };
+    tEl.addEventListener('change', ev=>{ if (ev.target.dataset.f==='name'){ const r = tray[+ev.target.closest('[data-i]').dataset.i]; const c = classify(r.name); r.spice = c.spice; if (r.auto){ r.loc = c.loc; r.exp = defaultExp(r.name, r.loc); } draw(); } });
+    tEl.onclick = ev=>{ const b = ev.target.closest('[data-rm]'); if (!b) return; tray.splice(+b.dataset.rm, 1); draw(); };
+    go.onclick = ()=>{
+      if (inp.value.trim()) push(inp.value);
+      let n = 0, s = 0;
+      tray.forEach(r=>{ const name = String(r.name||'').trim(); if (!name) return;
+        if (r.spice || classify(name).spice){ addSpice(name, 100); s++; return; }
+        addItem(name, r.qty, r.loc, r.exp); n++;
+        state.list.forEach(x=>{ if (!x.done && nameMatches(name, x.name)) x.done = true; }); });
+      sweep(); save(); closeSheet(); tab = 'kitchen'; render();
+      toast(n||s ? `Added ${[n?plural(n,'item'):'', s?plural(s,'spice'):''].filter(Boolean).join(' and ')}` : 'Nothing added');
     };
   });
 }
+function sheetReview(rows, fromPhoto){ sheetAdd(rows, fromPhoto ? 'Check what was picked up. Dates are estimates.' : ''); }
 const S_SHOP = {type:'OBJECT', properties:{items:{type:'ARRAY', items:{type:'OBJECT', properties:{name:S_STR, qty:S_STR, place:S_STR, days:{type:'INTEGER'}}, required:['name','place','days']}}, error:S_STR}, required:['items']};
-async function shopPhoto(file, msg){
+async function shopPhoto(file, msg, done){
   if (msg) msg.innerHTML = '<span class="spin"></span>Looking at your shopping…';
   try {
     const image = await fileToJpeg(file, 1800);
@@ -1382,37 +1458,15 @@ List every food and drink item you can identify. For each:
 - "name": a short plain UK name without the brand, e.g. "Chicken breast", "Greek yogurt", "Spinach". Expand receipt abbreviations.
 - "qty": the amount if you can see or reasonably tell it, e.g. "500g", "6", "2 tins", "1L", else "".
 - "place": where it should be kept once home: "fridge", "freezer" or "cupboard". Frozen food goes in "freezer".
-- "days": your best estimate of whole days from today until its use-by or best-before. Read printed dates when you can see them; otherwise use typical UK shelf life for that food stored that way (fresh chicken 2, milk 7, eggs 21, spinach 4, bread 5, cheddar 28, tins 700, rice 365, frozen food 180).
+- "days": whole days from today until its use-by or best-before. Read printed dates when you can see them; otherwise use typical UK shelf life for that food kept there, unopened (fresh chicken or mince 2, fish 2, milk 7, yogurt 10, eggs 21, cheddar 42, spinach 4, bread 5, bananas 5, potatoes 30, tins 700, rice or pasta 365, frozen food 180-240).
 Merge identical items into one line with a combined amount. Leave out non-food items, bags, prices and offers. If you can't see any food, return an empty list and put the reason in "error".
-Reply with ONLY JSON: {"items":[{"name":"Chicken breast","qty":"500g","place":"fridge","days":2}]}`, {image, schema:S_SHOP});
+Reply with ONLY JSON: {"items":[{"name":"Chicken breast","qty":"500g","place":"fridge","days":2}]}`, {image, schema:S_SHOP, best:true});
     const rows = (j.items||[]).map(x=>{ const name = cap(String(x.name||'').trim()); const loc = ['fridge','freezer','cupboard'].includes(String(x.place).toLowerCase()) ? String(x.place).toLowerCase() : classify(name).loc;
       const dd = Math.round(+x.days); return {name, qty:String(x.qty||'').trim(), loc, days: dd > 0 && dd < 1500 ? dd : null}; }).filter(x=>x.name);
     if (!rows.length){ if (msg) msg.textContent = j.error ? `Couldn’t see any food: ${j.error}` : 'Couldn’t see any food in that photo. Try one with the items spread out.'; return; }
-    sheetReview(rows, true);
+    spend('photo'); if (msg) msg.textContent = `Found ${plural(rows.length,'item')}. Dates are estimates — tap one to change it.`;
+    if (done) done(rows); else sheetAdd(rows, 'Check what was picked up. Dates are estimates.');
   } catch(e){ if (msg) msg.textContent = e && e.status===-2 ? 'The AI reply was garbled. Try again.' : aiErrMsg(e); }
-}
-function sheetReview(rows, fromPhoto){
-  rows = rows.filter(r=>r && r.name).map(r=>{ const c = classify(r.name), loc = r.loc || c.loc;
-    const exp = r.days ? addDays(r.days) : r.exp || defaultExp(r.name, loc); return {...r, loc, spice:c.spice, days:Math.max(0, Math.round((parseD(exp)-today())/86400000))}; });
-  if (!rows.length){ toast('Nothing to add'); return; }
-  const draw = () => rows.map((r,i)=>r.spice ? `<div class="edit" data-i="${i}"><input type="text" data-f="name" value="${esc(r.name)}" aria-label="Name"><span class="mut sm" style="grid-column:span 2">Spices &amp; basics</span><button class="x" data-rm="${i}" aria-label="Remove">×</button></div>`
-    : `<div class="edit" data-i="${i}"><input type="text" data-f="name" value="${esc(r.name)}" aria-label="Name"><input type="text" data-f="qty" value="${esc(r.qty||'')}" placeholder="Amount" aria-label="Amount"><select data-f="loc" aria-label="Kept in">${LOCS.map(([k,l])=>`<option value="${k}" ${r.loc===k?'selected':''}>${l}</option>`).join('')}</select><button class="x" data-rm="${i}" aria-label="Remove">×</button><span class="mut sm" style="grid-column:1/-1;margin-top:-2px">Use by <input type="number" data-f="days" value="${r.days}" min="0" style="width:64px;display:inline-block;padding:4px 6px;margin:0 4px"> days</span></div>`).join('');
-  openSheet(`${head(`Add ${plural(rows.length,'item')}`, fromPhoto ? 'Check what the photo picked up. Dates are estimates.' : 'Check the names and dates.')}<div id="rv" style="margin-top:10px">${draw()}</div>
-    <div class="btns"><button class="btn pri" id="rvGo">Add to kitchen</button></div>`, el=>{
-    const box = el.querySelector('#rv'), go = el.querySelector('#rvGo');
-    box.oninput = ev=>{ const row = ev.target.closest('[data-i]'), f = ev.target.dataset.f; if (!row || !f) return; rows[+row.dataset.i][f] = f==='days' ? Math.max(0, +ev.target.value||0) : ev.target.value; };
-    box.onchange = box.oninput;
-    box.onclick = ev=>{ const b = ev.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); box.innerHTML = draw(); go.textContent = rows.length ? 'Add to kitchen' : 'Close'; el.querySelector('h2').textContent = `Add ${plural(rows.length,'item')}`; };
-    go.onclick = ()=>{
-      let n = 0, s = 0;
-      rows.forEach(r=>{ const name = String(r.name||'').trim(); if (!name) return;
-        if (r.spice || classify(name).spice){ addSpice(name, 100); s++; return; }
-        addItem(name, r.qty, r.loc, addDays(r.days||0)); n++;
-        state.list.forEach(x=>{ if (!x.done && nameMatches(name, x.name)) x.done = true; }); });
-      sweep(); save(); closeSheet(); tab = 'kitchen'; render();
-      toast(n||s ? `Added ${[n?plural(n,'item'):'', s?plural(s,'spice'):''].filter(Boolean).join(' and ')}` : 'Nothing added');
-    };
-  });
 }
 function sheetStaple(){
   const have = new Set(state.spices.map(s=>normName(s.name)));
@@ -1467,7 +1521,7 @@ function recSub(e){
 const needName = l => stripAmt(l).replace(/^(tbsp|tsp|tablespoons?|teaspoons?|g|kg|ml|l|tins?|cans?|cloves?|handful|pinch|of)\b\s*/gi,'').replace(/^(of)\s+/i,'').toLowerCase();
 function vCook(){
   let h = pageTop('Cook');
-  h += `<button class="hero" data-act="cooknow"><b>Cook something now</b><span>${aiAvailable() ? 'A recipe written for you from what’s in your kitchen' : 'Add your free Gemini key in Settings to turn this on'}</span></button>`;
+  h += `<button class="hero" data-act="cooknow"><b>Cook something now</b><span>${aiAvailable() ? `A recipe written for you from what’s in your kitchen · ${left('gen')} left today` : 'Add your free Gemini key in Settings to turn this on'}</span></button>`;
   const lo = state.items.filter(it=>it.left && daysLeft(it) >= 0);
   if (lo.length) h += `<div class="sec"><h2>Leftovers to eat</h2></div><div class="rows">${lo.map(it=>`<button class="row" data-act="item" data-id="${it.id}"><div class="m"><div class="n">${esc(it.name.replace(/^Leftover /,''))}</div><div class="s">${esc([it.qty, dueLong(daysLeft(it))].filter(Boolean).join(' · '))}</div></div><span class="chev">›</span></button>`).join('')}</div>`;
   const s = slotNow(), evs = pool().filter(r=>slotOk(r, s) || (s==='l' && slotOk(r,'d'))).map(r=>evalRecipe(r));
@@ -1571,7 +1625,8 @@ STRICT RULE: every ingredient must be in the KITCHEN or SPICES list. Salt, peppe
 "servings" is ${ppl}; realistic UK portions; ingredient labels start with the amount for all servings; never use more than is left. "time" is your honest total minutes. 4-7 short steps.
 Reply with ONLY JSON: {"recipes":[{"name":"","servings":${ppl},"time":25,"protein":35,"kcal":550,"tags":[],"equipment":["hob"],"why":"","ingredients":[{"label":"300g chicken breast","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}]}
 ${JSON_RULES}`;
-  const j = await askJSON(prompt, {schema:S_IDEAS});
+  if (left('gen') <= 0) return 0;
+  const j = await askJSON(prompt, {schema:S_IDEAS, best:true}); spend('gen');
   const names = new Set(allRecipes().map(r=>normName(r.n))); let added = 0;
   (j.recipes||[]).slice(0,4).forEach(o=>{ const r = toRecipe(o, 'ai'); r.meal = 'Dinner'; if (!r.serves) r.serves = ppl;
     r.i = r.i.filter(x=>!(x[2] && !matchIng(x[1], {}) && !rackFor(x[1])));
@@ -1654,7 +1709,7 @@ function sheetImport(){
   });
 }
 async function runImport(input, el, image){
-  input = String(input||'').trim(); if (!input && !image) return; if (!aiAvailable()) return sheetSettings('ai');
+  input = String(input||'').trim(); if (!input && !image) return; if (!aiAvailable()) return sheetSettings('ai'); if (!canSpend(image ? 'photo' : 'gen')) return;
   const url = !image && isUrl(input), status = el.querySelector('#imStatus'), btn = el.querySelector('#imGo');
   btn.disabled = true; status.innerHTML = '<span class="spin"></span>' + (image ? 'Reading the photo…' : url ? 'Reading the page…' : 'Reading the recipe…');
   const prompt = (image ? 'Extract the recipe shown in this photo.' : url ? `Open this web page and extract the recipe on it: ${input}` : `Extract the recipe from the text below.\n\nTEXT START\n${input.slice(0,20000)}\nTEXT END`) +
@@ -1662,7 +1717,7 @@ async function runImport(input, el, image){
 {"name":"","servings":4,"time":30,"protein":30,"tags":[],"equipment":["hob"],"ingredients":[{"label":"500g chicken thighs","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}
 ${JSON_RULES} Write the steps as short, clear instructions in your own words, keeping amounts, times and temperatures. If there is no recipe, or you cannot open the page, reply {"error":"short reason"}.`;
   try {
-    const j = await askJSON(prompt, {url, image, schema:S_RECIPE});
+    const j = await askJSON(prompt, {url, image, schema:S_RECIPE, best:true}); spend(image ? 'photo' : 'gen');
     if (j.error || !(j.ingredients||[]).length) throw {status:-3};
     const r = toRecipe({...j, source: url ? input : ''}, 'import'); state.saved.unshift(r); save(); closeSheet(); tab = 'cook'; render(); sheetRecipe(r.id); toast('Added to your cookbook');
   } catch(e){
@@ -1681,15 +1736,15 @@ function sheetCookNow(pre){
     <label class="f">Time</label><div class="seg" id="cnTime">${[[15,'15 min'],[30,'30 min'],[60,'An hour']].map(([v,l])=>`<button class="${(pre.time||30)===v?'on':''}" data-v="${v}">${l}</button>`).join('')}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:18px"><span>Cooking for</span><div class="stepper"><button data-pp="-1" aria-label="Fewer">−</button><b id="cnP">${pre.people||planPeople()}</b><button data-pp="1" aria-label="More">+</button></div></div>
     <button class="tog ${pre.strict===false?'':'on'}" id="cnStrict" style="margin-top:8px"><span>Only use what I have<small>Turn off to allow one or two things to buy</small></span><i></i></button>
-    <div class="btns"><button class="btn pri" id="cnGo">Write my recipe</button></div><p class="note" id="cnMsg"></p>`, el=>{
+    <div class="btns"><button class="btn pri" id="cnGo">Write my recipe</button></div><p class="note" id="cnMsg">${left('gen')} of ${LIMITS.gen} AI recipes left today</p>`, el=>{
     const o = {meal:meal0, time:pre.time||30, people:pre.people||planPeople(), strict:pre.strict!==false, not:pre.not||[]};
     const segp = (id, k, num) => el.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{ o[k] = num ? +b.dataset.v : b.dataset.v; el.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle('on', x===b)); });
     segp('cnMeal','meal'); segp('cnTime','time',1);
     el.querySelectorAll('[data-pp]').forEach(b=>b.onclick=()=>{ o.people = Math.max(1, Math.min(10, o.people + +b.dataset.pp)); el.querySelector('#cnP').textContent = o.people; });
     el.querySelector('#cnStrict').onclick = ev=>{ o.strict = !o.strict; ev.currentTarget.classList.toggle('on', o.strict); };
-    el.querySelector('#cnGo').onclick = async ()=>{ o.ask = el.querySelector('#cnAsk').value.trim(); ui.lastAsk = o;
+    el.querySelector('#cnGo').onclick = async ()=>{ if (!canSpend('gen')) return; o.ask = el.querySelector('#cnAsk').value.trim(); ui.lastAsk = o;
       const b = el.querySelector('#cnGo'), m = el.querySelector('#cnMsg'); b.disabled = true; b.innerHTML = '<span class="spin"></span>Writing your recipe…'; m.textContent = '';
-      try { const r = await writeRecipe(o, t=>{ b.innerHTML = `<span class="spin"></span>${t}`; }); state.saved.unshift(r); save(); render(); sheetRecipe(r.id, {fresh:true}); }
+      try { const r = await writeRecipe(o, t=>{ b.innerHTML = `<span class="spin"></span>${t}`; }); spend('gen'); state.saved.unshift(r); save(); render(); sheetRecipe(r.id, {fresh:true}); }
       catch(e){ b.disabled = false; b.textContent = 'Try again'; m.textContent = e && e.status===-5 ? e.message : e && e.status===-2 ? 'The AI reply was garbled. Try again.' : aiErrMsg(e); }
     };
   });
@@ -1714,7 +1769,7 @@ ${mealRule(meal)}${meal==='Snack' ? ' A snack is one small, quick bite.' : ''}
 "servings" is ${ppl}; realistic UK portions; each ingredient label starts with the amount for all servings, e.g. "300g chicken breast", "1 pepper". Never use more than the kitchen has. Write clear numbered steps a beginner can follow, one action per step, with heat levels, times and how to tell it's done. "time" is your honest total.
 Reply with ONLY JSON: {"recipes":[{"name":"","servings":${ppl},"time":25,"protein":35,"kcal":550,"tags":[],"equipment":["hob"],"why":"one short line on what it uses up","ingredients":[{"label":"300g chicken breast","key":"chicken","optional":false}],"spices":["cumin"],"steps":[""]}]}
 ${JSON_RULES}`;
-  const j = await askJSON(prompt, {schema:S_IDEAS, onText:(t,th)=>{ if (prog) prog(/"steps"/.test(t) ? 'Writing the steps…' : /"name"/.test(t) ? 'Choosing ingredients…' : th ? 'Thinking about what you have…' : 'Writing your recipe…'); }});
+  const j = await askJSON(prompt, {schema:S_IDEAS, best:true, onText:(t,th)=>{ if (prog) prog(/"steps"/.test(t) ? 'Writing the steps…' : /"name"/.test(t) ? 'Choosing ingredients…' : th ? 'Thinking about what you have…' : 'Writing your recipe…'); }});
   const rs = (j.recipes||[]).map(x=>{ const r = toRecipe(x, 'ai'); r.meal = meal; if (!r.serves) r.serves = ppl; return r; }).filter(r=>goodRecipe(r, meal));
   for (const r of rs){
     if (o.strict){ r.i = r.i.filter(x=>!(x[2] && !matchIng(x[1], {}) && !rackFor(x[1]))); if (evalRecipe(r).missing.length) continue; }
@@ -1818,7 +1873,9 @@ function sheetSettings(focus){
     <details ${focus==='ai'?'open':''} id="aiSec"><summary>AI</summary><div>
       <p class="note" style="margin-top:0">Powers photo logging, recipe writing and imports. Get a free key at aistudio.google.com → Get API key. It stays on this phone.</p>
       <label class="f">Gemini API key</label><input type="password" id="gKey" value="${esc(g.key||'')}" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
-      <label class="f">Model</label><select id="gModel">${[['gemini-3.5-flash','Gemini 3.5 Flash (free, recommended)'],['gemini-3.1-flash-lite','Gemini 3.1 Flash-Lite (free, fastest)'],['gemini-3.8-flash','Gemini 3.8 Flash (small free allowance)'],['gemini-3.1-pro-preview','Gemini 3.1 Pro (needs billing)']].map(([v,l])=>`<option value="${v}" ${(g.model||'gemini-3.5-flash')===v?'selected':''}>${l}</option>`).join('')}</select>
+      <label class="f">Everyday model</label><select id="gModel">${[['gemini-3.8-flash','Gemini 3.8 Flash — best with billing on'],['gemini-3.5-flash','Gemini 3.5 Flash — free'],['gemini-3.1-flash-lite','Gemini 3.1 Flash-Lite — free, fastest']].map(([v,l])=>`<option value="${v}" ${(g.model||'gemini-3.5-flash')===v?'selected':''}>${l}</option>`).join('')}</select>
+      <button class="tog ${g.best?'on':''}" id="gBest"><span>Gemini 4 Argon for recipes and photos<small>Google’s best model. Slower, and roughly 5–10p each with billing on</small></span><i></i></button>
+      <p class="note">Daily limits: ${LIMITS.photo} photos and ${LIMITS.gen} AI recipes. ${left('photo')} photos and ${left('gen')} recipes left today.</p>
       <div class="btns"><button class="btn" id="gTest">Save and test</button></div><p class="note" id="gStatus"></p>
     </div></details>
     <details ${focus==='hh'?'open':''}><summary>Reminders &amp; sharing</summary><div>
@@ -1844,7 +1901,8 @@ function sheetSettings(focus){
     el.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>{ const k = b.dataset.ap, i = d.appliances.indexOf(k); if (i>=0) d.appliances.splice(i,1); else d.appliances.push(k); b.classList.toggle('on', i<0); });
     el.querySelector('#sHp').onclick = ev=>{ const i = d.goals.indexOf('hp'); if (i>=0) d.goals.splice(i,1); else d.goals.push('hp'); ev.currentTarget.classList.toggle('on', i<0); };
     el.querySelector('#sAuto').onclick = ev=>{ d.autoList = !d.autoList; ev.currentTarget.classList.toggle('on', d.autoList); };
-    const commit = ()=>{ d.dislikes = el.querySelector('#sDis').value; d.store = el.querySelector('#sStore').value; state.prefs = {...state.prefs, ...d}; setGem({key:el.querySelector('#gKey').value.trim(), model:el.querySelector('#gModel').value}); sweep(); save(); };
+    let gBest = !!g.best; el.querySelector('#gBest').onclick = ev=>{ gBest = !gBest; ev.currentTarget.classList.toggle('on', gBest); };
+    const commit = ()=>{ d.dislikes = el.querySelector('#sDis').value; d.store = el.querySelector('#sStore').value; state.prefs = {...state.prefs, ...d}; setGem({key:el.querySelector('#gKey').value.trim(), model:el.querySelector('#gModel').value, best:gBest}); sweep(); save(); };
     el.querySelector('#pSave').onclick = ()=>{ commit(); closeSheet(); render(); };
     el.querySelector('#gTest').onclick = async ()=>{ commit(); const st = el.querySelector('#gStatus'); if (!getGem().key){ st.textContent = 'Key removed.'; return; }
       st.innerHTML = '<span class="spin"></span>Testing…'; try { parseJSON(await gemini('Reply with this JSON only: {"ok":true}', false)); st.textContent = '✓ Key works.'; } catch(e){ st.textContent = aiErrMsg(e); } };
@@ -1912,9 +1970,9 @@ function drawScan(){
 }
 document.addEventListener('click', ev=>{
   const b = ev.target.closest('[data-scan]'); if (!b || !scan) return; const a = b.dataset.scan;
-  if (a==='close'){ closeScan(); afterOverlay(); }
+  if (a==='close'){ closeScan(); afterOverlay(); if (ui.trayKeep && ui.trayKeep.length){ const k = ui.trayKeep; ui.trayKeep = null; sheetAdd(k.map(r=>({name:r.name, qty:r.qty, loc:r.loc, exp:r.exp}))); } }
   else if (a==='rm'){ scan.items.splice(+b.dataset.i, 1); drawScan(); }
-  else if (a==='done'){ const s = closeScan(); const rows = s.items.filter(r=>!r.loading).reverse().map(r=>({name:r.name || 'Item ' + r.code, qty:(r.count>1 ? r.count + ' x ' : '') + (r.qty||'')})); if (rows.length) sheetReview(rows); }
+  else if (a==='done'){ const s = closeScan(); const rows = s.items.filter(r=>!r.loading).reverse().map(r=>({name:r.name || 'Item ' + r.code, qty:(r.count>1 ? r.count + ' x ' : '') + (r.qty||'')})); const keep = ui.trayKeep || []; ui.trayKeep = null; if (rows.length || keep.length) sheetAdd(keep.map(r=>({name:r.name, qty:r.qty, loc:r.loc, exp:r.exp})).concat(rows)); }
 });
 
 /* ---------- first run ---------- */
