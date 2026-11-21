@@ -623,7 +623,7 @@ function aiErrMsg(e){
   if (e.status===-4) return 'Gemini sent back an empty answer' + (e.message && e.message!=='empty' ? ' ('+e.message+')' : '') + '. Try again.';
   if (e.status===400 && /api key/i.test(e.message||'')) return 'The Gemini key on the server was rejected. The admin needs to check it.';
   if (e.status===403) return 'The Gemini key on the server isn’t allowed to use this. The admin needs to check it.';
-  if (/^limit:/.test(e.message||'')){ const k = e.message.slice(6); return k==='photo' ? `That’s today’s ${LIMITS.photo} photos used. More tomorrow.` : k==='gen' ? `That’s today’s ${LIMITS.gen} AI recipes used. More tomorrow.` : 'AI has hit its daily limit for everyone. It resets tomorrow.'; }
+  if (/^limit:/.test(e.message||'')){ const k = e.message.slice(6); return k==='price' ? 'Live prices can be checked once a week on each phone.' : k==='photo' ? `That’s today’s ${LIMITS.photo} photos used. More tomorrow.` : k==='gen' ? `That’s today’s ${LIMITS.gen} AI recipes used. More tomorrow.` : 'AI has hit its daily limit for everyone. It resets tomorrow.'; }
   if (/not set up/i.test(e.message||'')) return 'AI isn’t set up yet. The admin adds the Gemini key in Settings → Admin.';
   if (/prepay|depleted|billing/i.test(e.message||'')) return 'Google says your key’s project has no prepaid balance. In AI Studio → Billing, add a prepaid top-up (your monthly credits only apply after that), or use a free key from a project without billing.';
   if (e.status===429 || e.code==='rate_limited') return 'Daily limit reached for this key. It resets at 8am UK time.';
@@ -942,7 +942,10 @@ const PRICE = {milk:165,'oat milk':180,'almond milk':165,'soya milk':150,butter:
   'toilet roll':450,'kitchen roll':300,'washing up liquid':150,'bin bag':200,foil:200,'cling film':150};
 const CAT_P = {Veg:100, Herbs:85, Fruit:150, Meat:450, Fish:400, 'Dairy & eggs':180, Chilled:250, Bakery:140, Cupboard:150, Drinks:180, Frozen:250};
 const STORE_X = {tesco:1, sainsburys:1.03, asda:0.95, morrisons:1.01, ocado:1.06, waitrose:1.2, aldi:0.84};
-const PRICES_LS = 'larder-prices', LIVE_DAYS = 14;
+const PRICES_LS = 'larder-prices', LIVE_DAYS = 14, CHK_LS = 'larder-price-chk';
+const SMALL_X = 1.1;      // Express / Local / little shops charge about 10% more than big stores and the website
+function priceChk(){ try { return JSON.parse(localStorage.getItem(CHK_LS)||'{}'); } catch(e){ return {}; } }
+function nextLiveCheck(){ const c = priceChk(); return c.done && Date.now() - c.t < 7*864e5 ? c.t + 7*864e5 : 0; }
 function livePrices(){ try { return JSON.parse(localStorage.getItem(PRICES_LS)||'{}'); } catch(e){ return {}; } }
 function packs(name){ const m = String(name).match(/^\s*(\d+)\s*[x×]\s+|\s[x×]\s*(\d+)\s*$/i); return m ? Math.min(20, +(m[1]||m[2])) : 1; }
 function typicalPence(name){
@@ -954,7 +957,8 @@ function typicalPence(name){
 function costOf(items){
   const st = state.prefs.store || 'tesco', live = livePrices()[st] || {}, fresh = Date.now() - LIVE_DAYS*864e5;
   const rows = items.map(x=>{ const l = live[normName(x.name)], k = packs(x.name);
-    return l && l.t > fresh ? {x, p:l.p*k, live:true, prod:l.prod, t:l.t} : {x, p:Math.round(typicalPence(x.name)*(STORE_X[st]||1))*k, live:false}; });
+    const sx = state.prefs.small ? SMALL_X : 1;
+    return l && l.t > fresh ? {x, p:Math.round(l.p*sx)*k, live:true, prod:l.prod, t:l.t} : {x, p:Math.round(typicalPence(x.name)*(STORE_X[st]||1)*sx)*k, live:false}; });
   return {rows, total: rows.reduce((a,r)=>a+r.p, 0), live: rows.filter(r=>r.live).length};
 }
 const gbp = p => '£' + (p/100).toFixed(2);
@@ -964,12 +968,17 @@ function sheetCost(){
   openSheet(`${head('About ' + gbp(c.total) + ' at ' + store)}
     <p class="note" style="margin-top:6px">${c.live === c.rows.length ? 'All prices checked live.' : c.live ? `${c.live} of ${c.rows.length} prices checked live, the rest are typical prices.` : 'Typical supermarket prices, adjusted for ' + esc(store) + '. Could be out by a few pounds.'}</p>
     <div class="rows" style="margin-top:12px">${c.rows.map(r=>`<div class="row"><div class="m"><div class="n">${esc(r.x.name)}</div><div class="s">${r.live ? esc(r.prod || store) + ' · checked ' + ago(r.t) : 'typical price'}</div></div><span style="font-variant-numeric:tabular-nums;padding-right:4px">${gbp(r.p)}</span></div>`).join('')}</div>
-    ${hasGemini() ? `<div class="btns"><button class="btn pri" id="cLive">Check live prices at ${esc(store)}</button></div><p class="note" id="cMsg">Looks up today's prices on the web. Saved for ${LIVE_DAYS} days.</p>` : ''}
+    <label class="f">Where you'll buy it</label><div class="seg" id="cSmall"><button class="${state.prefs.small?'':'on'}" data-v="0">Big store or online</button><button class="${state.prefs.small?'on':''}" data-v="1">Express / Local</button></div>
+    <p class="note" style="margin-top:6px">Big supermarkets charge the same in store as on their website. Express and Local shops are about 10% dearer. Delivery charges aren't included.</p>
+    ${hasGemini() ? (nextLiveCheck() ? `<div class="btns"><button class="btn" disabled>Next live check ${new Date(nextLiveCheck()).toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'short'})}</button></div><p class="note">Live prices can be checked once a week.</p>`
+      : `<div class="btns"><button class="btn pri" id="cLive">Check live prices at ${esc(store)}</button></div><p class="note" id="cMsg">Looks up today's prices on ${esc(store)}'s website. You can do this once a week; prices are kept for ${LIVE_DAYS} days.</p>`) : ''}
     <p class="note">Change your shop in Settings → Kitchen &amp; list.</p>`, el=>{
+    el.querySelectorAll('#cSmall button').forEach(x=>x.onclick=()=>{ state.prefs.small = x.dataset.v==='1'; save(); render(); sheetCost(); });
     const b = el.querySelector('#cLive'); if (!b) return;
     b.onclick = async ()=>{ b.disabled = true; b.innerHTML = '<span class="spin"></span>Checking prices…';
       try { await checkLive(open, t=>{ b.innerHTML = `<span class="spin"></span>${t}`; }); render(); sheetCost(); }
-      catch(e){ b.disabled = false; b.textContent = 'Try again'; el.querySelector('#cMsg').textContent = e && e.status===-2 ? 'Couldn’t read the prices that came back. Try again.' : /limit:|not set up/.test(e && e.message || '') ? aiErrMsg(e) : aiErrMsg(e) + ' Live prices use Google Search, which needs billing on the Gemini key.'; }
+      catch(e){ if (/limit:price/.test(e && e.message || '')){ const c = priceChk(); c.done = true; try { localStorage.setItem(CHK_LS, JSON.stringify(c)); } catch(_){} }
+        b.disabled = false; b.textContent = 'Try again'; el.querySelector('#cMsg').textContent = e && e.status===-2 ? 'Couldn’t read the prices that came back. Try again.' : /limit:|not set up/.test(e && e.message || '') ? aiErrMsg(e) : aiErrMsg(e) + ' Live prices use Google Search, which needs billing on the Gemini key.'; }
     };
   });
 }
@@ -982,13 +991,16 @@ ${list.map((x,i)=>`${i+1}. ${x.name}`).join('\n')}
 
 Reply with ONLY JSON, no other text: {"items":[{"n":1,"product":"${store} semi skimmed milk 2.27L","price":1.65}]}
 "n" is the list number, "product" is the exact product and pack size (under 60 characters), "price" is in pounds. Use null for price if you can't find it.`;
-  const j = await askJSON(prompt, {url:'search', kind:'other', onText:(t,th)=>{ if (prog) prog(t ? 'Adding it up…' : th ? 'Searching ' + store + '…' : 'Checking prices…'); }});
+  let ck = priceChk(); if (!ck.aid || ck.done || Date.now() - ck.t > 7*864e5) ck = {aid: uid() + uid(), t: Date.now()};
+  try { localStorage.setItem(CHK_LS, JSON.stringify(ck)); } catch(e){}
+  const j = await askJSON(prompt, {url:'search', kind:'price', aid: ck.aid, onText:(t,th)=>{ if (prog) prog(t ? 'Adding it up…' : th ? 'Searching ' + store + '…' : 'Checking prices…'); }});
   const all = livePrices(), m = all[st] = all[st] || {}; let n = 0;
   (j.items||[]).forEach(r=>{ const x = list[(+r.n||0)-1], p = Math.round(parseFloat(r.price)*100); if (!x || !(p > 0 && p < 20000)) return;
     m[normName(x.name)] = {p, prod: shortLine(String(r.product||''), 60), t: Date.now()}; n++; });
   for (const k in m) if (m[k].t < Date.now() - 60*864e5) delete m[k];
   try { localStorage.setItem(PRICES_LS, JSON.stringify(all)); } catch(e){}
   if (!n) throw {status:-2};
+  ck.done = true; try { localStorage.setItem(CHK_LS, JSON.stringify(ck)); } catch(e){}
   return n;
 }
 
