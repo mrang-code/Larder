@@ -10,6 +10,10 @@
 // 3. AI: the Gemini key lives here, not on the phones. Phones send their AI requests to /ai, and this
 //    server adds the key, applies the daily limits and passes the answer straight back.
 //    The admin code (set once with /admin/setup) is needed to change the key, model or limits.
+// 4. Larder Pro: Stripe Checkout for the subscription, Pro codes that unlock it on a phone, the
+//    Stripe billing page, and the free/Pro AI limits. Needs a secret named STRIPE_KEY (a Stripe
+//    restricted key) in the Worker's Variables and Secrets. Prices are found by their lookup keys
+//    larder_pro_monthly / larder_pro_yearly, so test and live accounts work the same way.
 //
 // Setup (see the guide): paste this file into a Worker, add a KV binding named DB,
 // and add a Cron Trigger of  0 * * * *  (every hour).
@@ -74,8 +78,10 @@ function cleanState(st) {
 }
 async function household(path, b, env, origin) {
   if (path === '/hh/new') {
+    const pro = await proFor(env, b.pro);
+    if (!pro.active) return json({error: 'Shared kitchens are part of Larder Pro', pro: false}, 402, origin);
     const id = rid(10), secret = rid(24), state = cleanState(b.state);
-    await env.DB.put('hh:' + id, JSON.stringify({h: await sha(secret), state, t: Date.now()}));
+    await env.DB.put('hh:' + id, JSON.stringify({h: await sha(secret), state, t: Date.now(), owner: pro.token}));
     return json({id, secret, state}, 200, origin);
   }
   if (path === '/hh/sync') {
@@ -83,9 +89,14 @@ async function household(path, b, env, origin) {
     const rec = await env.DB.get('hh:' + b.id, 'json');
     if (!rec) return json({error: 'No such kitchen'}, 404, origin);
     if (rec.h !== await sha(b.secret || '')) return json({error: 'Wrong code'}, 403, origin);
+    // Kitchens made before Pro existed have no owner and stay free.
+    if (rec.owner && !(await proFor(env, rec.owner)).active) return json({error: 'The Larder Pro plan for this shared kitchen has ended', pro: false}, 402, origin);
     if (b.state && typeof b.state === 'object') {
-      rec.state = mergeStates(cleanState(b.state), rec.state); rec.t = Date.now();
-      try { await env.DB.put('hh:' + b.id, JSON.stringify(rec)); } catch (e) { return json({error: 'Busy, try again'}, 503, origin); }
+      const before = JSON.stringify(rec.state), merged = mergeStates(cleanState(b.state), rec.state);
+      if (JSON.stringify(merged) !== before) {      // only write when something changed (storage writes are limited)
+        rec.state = merged; rec.t = Date.now();
+        try { await env.DB.put('hh:' + b.id, JSON.stringify(rec)); } catch (e) { return json({error: 'Busy, try again'}, 503, origin); }
+      }
     }
     return json({state: rec.state}, 200, origin);
   }
@@ -93,7 +104,7 @@ async function household(path, b, env, origin) {
 }
 
 // ---------- shared settings, admin and AI ----------
-const DEFAULTS = {key: '', model: 'gemini-3.5-flash', best: false, limits: {photo: 5, gen: 10, total: 150}};
+const DEFAULTS = {key: '', model: 'gemini-3.5-flash', best: false, limits: {photo: 5, gen: 10, total: 150, freePhoto: 1, freeGen: 3}};
 async function getCfg(env) { const c = await env.DB.get('cfg', 'json'); return {...DEFAULTS, ...(c || {}), limits: {...DEFAULTS.limits, ...((c || {}).limits || {})}}; }
 const publicCfg = c => ({ai: !!c.key, model: c.model, best: !!c.best, limits: c.limits});
 const okModel = m => /^gemini-[a-z0-9.\-]{1,40}$/.test(String(m || ''));
@@ -122,17 +133,37 @@ async function admin(path, b, env, origin, ip) {
     if (s.clearKey) c.key = '';
     if (okModel(s.model)) c.model = s.model;
     if (typeof s.best === 'boolean') c.best = s.best;
-    if (s.limits && typeof s.limits === 'object') ['photo', 'gen', 'total'].forEach(k => { const n = Math.round(+s.limits[k]); if (n >= 0 && n <= 10000) c.limits[k] = n; });
+    if (s.limits && typeof s.limits === 'object') ['photo', 'gen', 'total', 'freePhoto', 'freeGen'].forEach(k => { const n = Math.round(+s.limits[k]); if (n >= 0 && n <= 10000) c.limits[k] = n; });
     if (typeof s.newCode === 'string' && s.newCode.length >= 6) { const salt = rid(16); await env.DB.put('admin', JSON.stringify({salt, h: await sha(salt + s.newCode)})); }
     await env.DB.put('cfg', JSON.stringify(c));
   }
+  if (path === '/admin/procode') {             // free Pro codes for friends and testing
+    if (b.revoke) { await env.DB.delete('pro:' + cleanCode(b.revoke)); return json({ok: true}, 200, origin); }
+    const token = rid(16); await env.DB.put('pro:' + token, JSON.stringify({comp: true, note: String(b.note || '').slice(0, 60), t: Date.now()}));
+    return json({ok: true, token}, 200, origin);
+  }
   const use = (await env.DB.get('use:all:' + today(), 'json')) || {n: 0};
-  return json({ok: true, cfg: {...publicCfg(c), keyEnd: c.key ? c.key.slice(-4) : ''}, today: use.n}, 200, origin);
+  return json({ok: true, stripe: !!env.STRIPE_KEY, cfg: {...publicCfg(c), keyEnd: c.key ? c.key.slice(-4) : ''}, today: use.n}, 200, origin);
 }
 // Counts one AI action per phone (an action can take more than one request when a model falls back).
 const WEEK = 7 * 864e5;
-async function spendAI(env, c, dev, kind, aid) {
+function weekId(){ const d = new Date(); d.setUTCHours(0,0,0,0); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); }
+async function spendAI(env, c, dev, kind, aid, pro) {
   const d = today(), lim = c.limits;
+  if (!pro && kind !== 'price') {             // free: a few AI actions a week (Monday to Sunday)
+    const wk = 'wk:' + dev + ':' + weekId(), u = (await env.DB.get(wk, 'json')) || {photo: [], gen: [], other: []};
+    const list = u[kind] || (u[kind] = []);
+    if (list.includes(aid)) return null;
+    const all = (await env.DB.get('use:all:' + d, 'json')) || {n: 0};
+    if (all.n >= lim.total) return 'total';
+    if (kind === 'photo' && list.length >= lim.freePhoto) return 'free_photo';
+    if (kind === 'gen' && list.length >= lim.freeGen) return 'free_gen';
+    if (kind === 'other' && list.length >= 20) return 'free_other';
+    list.push(aid); all.n++;
+    await env.DB.put(wk, JSON.stringify(u), {expirationTtl: 9 * 86400});
+    await env.DB.put('use:all:' + d, JSON.stringify(all), {expirationTtl: 3 * 86400});
+    return null;
+  }
   if (kind === 'price') {                      // live prices: once a week per phone (up to 3 tries of the same check)
     const wk = 'use:' + dev + ':price', w = await env.DB.get(wk, 'json');
     if (w && Date.now() - w.t < WEEK) {
@@ -164,7 +195,8 @@ async function ai(b, env, origin) {
   if (!c.key) return json({error: {code: 503, message: 'AI is not set up yet. Ask the admin to add a Gemini key.'}}, 503, origin);
   const dev = String(b.dev || ''), aid = String(b.aid || ''), kind = ['photo', 'gen', 'other', 'price'].includes(b.kind) ? b.kind : 'other';
   if (!/^[a-z0-9]{8,24}$/.test(dev) || !/^[a-z0-9]{6,24}$/.test(aid)) return json({error: {code: 400, message: 'Bad request'}}, 400, origin);
-  const over = await spendAI(env, c, dev, kind, aid);
+  const pro = (await proFor(env, b.pro)).active;
+  const over = await spendAI(env, c, dev, kind, aid, pro);
   if (over) return json({error: {code: 429, message: 'limit:' + over}}, 429, origin);
   const model = okModel(b.model) ? b.model : c.model;
   const up = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
@@ -174,6 +206,80 @@ async function ai(b, env, origin) {
     if (w && w.aid === aid && w.n <= 1) await env.DB.delete(wk);
   }
   return new Response(up.body, {status: up.status, headers: {'Content-Type': up.headers.get('Content-Type') || 'text/event-stream', 'Cache-Control': 'no-store', ...cors(origin)}});
+}
+
+// ---------- Larder Pro (Stripe) ----------
+const APP_URL = 'https://mrang-code.github.io/Larder/';
+const cleanCode = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
+function form(obj, pre, out) {                 // Stripe takes form-encoded bodies: a[b][0]=c
+  out = out || [];
+  for (const k in obj) { const v = obj[k], key = pre ? pre + '[' + k + ']' : k;
+    if (v === undefined || v === null) continue;
+    if (typeof v === 'object') form(v, key, out); else out.push(encodeURIComponent(key) + '=' + encodeURIComponent(v)); }
+  return out.join('&');
+}
+async function stripe(env, method, path, params) {
+  if (!env.STRIPE_KEY) throw new Error('Payments are not set up yet');
+  const q = params ? form(params) : '';
+  const r = await fetch('https://api.stripe.com/v1/' + path + (method === 'GET' && q ? '?' + q : ''), {method,
+    headers: {'Authorization': 'Bearer ' + env.STRIPE_KEY, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': '2024-06-20'},
+    body: method === 'GET' ? undefined : q});
+  const j = await r.json();
+  if (!r.ok) throw new Error((j.error && j.error.message) || ('Stripe error ' + r.status));
+  return j;
+}
+async function priceId(env, plan) {
+  const lk = plan === 'year' ? 'larder_pro_yearly' : 'larder_pro_monthly', ck = 'price:' + lk + ':' + (env.STRIPE_KEY || '').slice(3, 7);
+  let id = await env.DB.get(ck); if (id) return id;
+  const j = await stripe(env, 'GET', 'prices', {lookup_keys: [lk], active: true});
+  if (!j.data || !j.data[0]) throw new Error('Price ' + lk + ' not found in Stripe');
+  id = j.data[0].id; await env.DB.put(ck, id, {expirationTtl: 86400}); return id;
+}
+function fromSub(rec, sub) {
+  const item = sub.items && sub.items.data && sub.items.data[0];
+  rec.sub = sub.id; rec.cust = typeof sub.customer === 'string' ? sub.customer : (sub.customer && sub.customer.id);
+  rec.status = sub.status; rec.cancel = !!sub.cancel_at_period_end;
+  rec.end = 1000 * (sub.current_period_end || (item && item.current_period_end) || 0);
+  rec.plan = item && item.price && item.price.recurring ? item.price.recurring.interval : rec.plan;
+  rec.chk = Date.now(); return rec;
+}
+// 'Cancel' in the billing page keeps the plan active until the period ends, so status alone is enough.
+const isActive = r => !!r && (r.comp || ['active', 'trialing', 'past_due'].includes(r.status));
+// Look up a Pro code; re-check the subscription with Stripe at most every 6 hours.
+async function proFor(env, token, force) {
+  token = cleanCode(token); if (!token) return {active: false};
+  const rec = await env.DB.get('pro:' + token, 'json'); if (!rec) return {active: false, unknown: true};
+  if (!rec.comp && rec.sub && env.STRIPE_KEY && (force || Date.now() - (rec.chk || 0) > 6 * 3600e3)) {
+    try { fromSub(rec, await stripe(env, 'GET', 'subscriptions/' + rec.sub)); await env.DB.put('pro:' + token, JSON.stringify(rec)); } catch (e) {}
+  }
+  return {active: isActive(rec), token, rec};
+}
+const proView = p => p.rec ? {pro: p.active, comp: !!p.rec.comp, status: p.rec.comp ? 'gift' : p.rec.status, plan: p.rec.plan || '', end: p.rec.end || 0, cancel: !!p.rec.cancel} : {pro: false};
+async function pro(path, b, env, origin) {
+  if (path === '/pro/checkout') {
+    const plan = b.plan === 'year' ? 'year' : 'month';
+    const s = await stripe(env, 'POST', 'checkout/sessions', {mode: 'subscription', line_items: [{price: await priceId(env, plan), quantity: 1}],
+      subscription_data: {trial_period_days: 7, metadata: {app: 'larder'}}, allow_promotion_codes: true,
+      success_url: APP_URL + '?pro={CHECKOUT_SESSION_ID}', cancel_url: APP_URL + '?pro=cancel', metadata: {app: 'larder', dev: String(b.dev || '').slice(0, 24)}});
+    return json({url: s.url}, 200, origin);
+  }
+  if (path === '/pro/claim') {                 // after Checkout: turn the paid session into a Pro code
+    const sid = String(b.session || ''); if (!/^cs_[A-Za-z0-9_]{10,200}$/.test(sid)) return json({error: 'Bad session'}, 400, origin);
+    const had = await env.DB.get('sess:' + sid); if (had) { const p = await proFor(env, had); return json({token: had, ...proView(p)}, 200, origin); }
+    const s = await stripe(env, 'GET', 'checkout/sessions/' + sid, {expand: ['subscription']});
+    if (s.status !== 'complete' || !s.subscription) return json({error: 'That payment isn’t finished yet'}, 409, origin);
+    const token = rid(16), rec = fromSub({t: Date.now(), email: (s.customer_details && s.customer_details.email) || ''}, s.subscription);
+    await env.DB.put('pro:' + token, JSON.stringify(rec)); await env.DB.put('sess:' + sid, token, {expirationTtl: 30 * 86400});
+    try { await stripe(env, 'POST', 'subscriptions/' + rec.sub, {metadata: {larder_code: token}}); } catch (e) {}
+    return json({token, ...proView({active: isActive(rec), rec})}, 200, origin);
+  }
+  if (path === '/pro/status') { const p = await proFor(env, b.token, !!b.force); return json(p.unknown ? {pro: false, unknown: true} : proView(p), 200, origin); }
+  if (path === '/pro/portal') {
+    const p = await proFor(env, b.token); if (!p.rec || !p.rec.cust) return json({error: 'No subscription found for this code'}, 404, origin);
+    const s = await stripe(env, 'POST', 'billing_portal/sessions', {customer: p.rec.cust, return_url: APP_URL});
+    return json({url: s.url}, 200, origin);
+  }
+  return json({error: 'Not found'}, 404, origin);
 }
 
 async function keyFor(endpoint) { return 'sub:' + b64u(await crypto.subtle.digest('SHA-256', enc(endpoint))); }
@@ -231,11 +337,18 @@ async function runDue(env) {
 
 export default {
   async fetch(req, env) {
+    try { return await handle(req, env); }
+    catch (e) { return json({error: {code: 500, message: 'Server error: ' + String(e && e.message || e)}}, 500, req.headers.get('Origin') || ''); }
+  },
+  async scheduled(event, env, ctx) { ctx.waitUntil(runDue(env)); }
+};
+async function handle(req, env) {
+  {
     const origin = req.headers.get('Origin') || '';
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors(origin)});
     if (req.method === 'GET' && url.pathname === '/') {
-      return new Response('Larder server is running (v5).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB'), {headers: {'Content-Type': 'text/plain', ...cors(origin)}});
+      return new Response('Larder server is running (v6).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB'), {headers: {'Content-Type': 'text/plain', ...cors(origin)}});
     }
     if (!env.DB) return json({error: 'Storage is not connected. Add a KV binding named DB.'}, 500, origin);
     if (req.method === 'GET' && url.pathname === '/key') return json({key: (await vapid(env)).pub}, 200, origin);
@@ -247,6 +360,7 @@ export default {
     let b; try { b = await req.json(); } catch (e) { return json({error: 'Bad request'}, 400, origin); }
     if (url.pathname.startsWith('/hh/')) return household(url.pathname, b || {}, env, origin);
     if (url.pathname === '/ai') return ai(b || {}, env, origin);
+    if (url.pathname.startsWith('/pro/')) { try { return await pro(url.pathname, b || {}, env, origin); } catch (e) { return json({error: String(e.message || e)}, 502, origin); } }
     if (url.pathname.startsWith('/admin/')) return admin(url.pathname, b || {}, env, origin, req.headers.get('CF-Connecting-IP') || '');
     const endpoint = String((b && b.sub && b.sub.endpoint) || (b && b.endpoint) || '');
     if (!okEndpoint(endpoint)) return json({error: 'Bad subscription'}, 400, origin);
@@ -257,7 +371,8 @@ export default {
       const h = Number(b.hour); const hour = Number.isFinite(h) ? Math.min(23, Math.max(0, Math.round(h))) : 17;
       const old = await env.DB.get(k, 'json');
       const dh = Number(b.diary); const diary = Number.isFinite(dh) && dh >= 0 ? Math.min(23, Math.round(dh)) : -1;
-      await env.DB.put(k, JSON.stringify({endpoint, dates, hour, diary, tz: String(b.tz || 'Europe/London').slice(0, 64), last: old ? old.last || '' : '', lastD: old ? old.lastD || '' : ''}));
+      const rec = {endpoint, dates, hour, diary, tz: String(b.tz || 'Europe/London').slice(0, 64), last: old ? old.last || '' : '', lastD: old ? old.lastD || '' : ''};
+      if (!old || JSON.stringify(old) !== JSON.stringify(rec)) await env.DB.put(k, JSON.stringify(rec));   // skip identical writes
       return json({ok: true, days: dates.length}, 200, origin);
     }
     if (url.pathname === '/unsubscribe') { await env.DB.delete(k); return json({ok: true}, 200, origin); }
@@ -267,6 +382,5 @@ export default {
       return json({ok: status >= 200 && status < 300, status}, 200, origin);
     }
     return json({error: 'Not found'}, 404, origin);
-  },
-  async scheduled(event, env, ctx) { ctx.waitUntil(runDue(env)); }
-};
+  }
+}
