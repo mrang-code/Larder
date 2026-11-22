@@ -603,7 +603,7 @@ async function geminiCall(m, body, onText){
   const g = getGem(); const ctl = new AbortController(); let timer = setTimeout(()=>ctl.abort(), 50000);
   const bump = () => { clearTimeout(timer); timer = setTimeout(()=>ctl.abort(), 50000); };
   let r;
-  try { r = await fetch(getServer() + '/ai', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:m, body, kind:AI_KIND, aid:AI_AID || (AI_AID = uid() + uid()), dev:devId()}), signal:ctl.signal}); }
+  try { r = await fetch(getServer() + '/ai', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:m, body, pro:getPro().token||'', kind:AI_KIND, aid:AI_AID || (AI_AID = uid() + uid()), dev:devId()}), signal:ctl.signal}); }
   catch(e){ clearTimeout(timer); return {err:{status:0, message: ctl.signal.aborted ? 'timeout' : 'network', model:m}}; }
   if (!r.ok){
     clearTimeout(timer);
@@ -643,7 +643,7 @@ function aiErrMsg(e){
   if (e.status===-4) return 'Gemini sent back an empty answer' + (e.message && e.message!=='empty' ? ' ('+e.message+')' : '') + '. Try again.';
   if (e.status===400 && /api key/i.test(e.message||'')) return 'The Gemini key on the server was rejected. The admin needs to check it.';
   if (e.status===403) return 'The Gemini key on the server isn’t allowed to use this. The admin needs to check it.';
-  if (/^limit:/.test(e.message||'')){ const k = e.message.slice(6); return k==='price' ? 'Live prices can be checked once a week on each phone.' : k==='photo' ? `That’s today’s ${LIMITS.photo} photos used. More tomorrow.` : k==='gen' ? `That’s today’s ${LIMITS.gen} AI recipes used. More tomorrow.` : 'AI has hit its daily limit for everyone. It resets tomorrow.'; }
+  if (/^limit:/.test(e.message||'')){ const k = e.message.slice(6); return k==='free_photo' ? `That’s this week’s free shopping photo used. Larder Pro gives you ${limOf('photo','photo',5)} a day.` : k==='free_gen' ? `That’s this week’s ${limOf('freeGen','freeGen',3)} free AI recipes used. Larder Pro gives you ${limOf('gen','gen',10)} a day.` : k==='free_other' ? 'That’s this week’s free AI used. Larder Pro gives you much more.' : k==='price' ? 'Live prices can be checked once a week on each phone.' : k==='photo' ? `That’s today’s ${LIMITS.photo} photos used. More tomorrow.` : k==='gen' ? `That’s today’s ${LIMITS.gen} AI recipes used. More tomorrow.` : 'AI has hit its daily limit for everyone. It resets tomorrow.'; }
   if (/not set up/i.test(e.message||'')) return 'AI isn’t set up yet. The admin adds the Gemini key in Settings → Admin.';
   if (/prepay|depleted|billing/i.test(e.message||'')) return 'Google says your key’s project has no prepaid balance. In AI Studio → Billing, add a prepaid top-up (your monthly credits only apply after that), or use a free key from a project without billing.';
   if (e.status===429 || e.code==='rate_limited') return 'Daily limit reached for this key. It resets at 8am UK time.';
@@ -1000,7 +1000,69 @@ function costOf(items){
   return {rows, total: rows.reduce((a,r)=>a+r.p, 0), live: rows.filter(r=>r.shared).length};
 }
 const gbp = p => '£' + (p/100).toFixed(2);
+/* ---------- Larder Pro ---------- */
+const PRO_LS = 'larder-pro', PRO_PAGE = 'pro.html';
+function getPro(){ try { return JSON.parse(localStorage.getItem(PRO_LS)||'{}'); } catch(e){ return {}; } }
+function setPro(p){ try { localStorage.setItem(PRO_LS, JSON.stringify(p)); } catch(e){} }
+const isPro = () => { const p = getPro(); return !!(p.token && p.pro); };
+async function proCall(path, body){
+  let r; try { r = await fetch(getServer() + path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body||{})}); } catch(e){ throw 'Couldn’t reach the Larder server. Check your signal.'; }
+  const j = await r.json().catch(()=>({})); if (!r.ok) throw (j.error && (j.error.message || j.error)) || ('Error ' + r.status); return j;
+}
+async function refreshPro(force){
+  const p = getPro(); if (!p.token) return;
+  if (!force && Date.now() - (p.chk||0) < 3 * 3600e3) return;
+  try { const j = await proCall('/pro/status', {token:p.token, force:!!force}); const was = !!p.pro;
+    if (j.unknown){ setPro({}); if (was) render(); return; }
+    setPro({...p, ...j, chk:Date.now()}); if (was !== !!j.pro) render(); } catch(e){}
+}
+async function claimPro(){
+  const q = new URLSearchParams(location.search), sid = q.get('pro'); if (!sid) return;
+  history.replaceState(null, '', location.pathname);
+  if (sid === 'cancel'){ toast('No problem. You can go Pro any time in Settings.'); return; }
+  toast('Setting up Larder Pro…');
+  for (let t = 0; t < 4; t++){
+    try { const j = await proCall('/pro/claim', {session:sid}); setPro({...j, chk:Date.now()}); render(); sheetPro('welcome'); return; }
+    catch(e){ if (t === 3) toast('Payment went through, but Pro didn’t switch on: ' + e); await new Promise(r=>setTimeout(r, 2500)); }
+  }
+}
+const fmtCode = t => String(t||'').toUpperCase().replace(/(.{4})(?=.)/g, '$1-');
+const proDate = ms => new Date(ms).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'});
+const PRO_WHY = {gen:'You’ve used this week’s free AI recipes.', photo:'You’ve used this week’s free shopping photo.', shared:'Shared kitchens are part of Larder Pro.', prices:'Shop prices and your basket total are part of Larder Pro.', plan:'The dinner planner is part of Larder Pro.'};
+function sheetPro(why){
+  const p = getPro();
+  if (isPro()){
+    const st = p.comp ? 'Pro is on, as a gift.' : p.status==='trialing' ? `Free trial until ${proDate(p.end)}, then ${p.plan==='year'?'£29.99 a year':'£3.99 a month'}.` : p.cancel ? `Cancelled. Pro stays on until ${proDate(p.end)}.` : p.status==='past_due' ? 'Your last payment didn’t go through. Update your card to keep Pro.' : `Renews on ${proDate(p.end)} (${p.plan==='year'?'£29.99 a year':'£3.99 a month'}).`;
+    openSheet(`${head(why==='welcome' ? 'Welcome to Larder Pro' : 'Larder Pro', st)}
+      <div style="margin-top:10px">${['Up to ' + limOf('gen','gen',10) + ' AI recipes and ' + limOf('photo','photo',5) + ' shopping photos a day','Shared kitchen with the people you live with','Shop prices and your basket total','Dinner planner for the week'].map(t=>`<div class="ing"><span class="k" style="color:var(--acc)">✓</span><span>${t}</span></div>`).join('')}</div>
+      ${p.comp ? '' : '<div class="btns"><button class="btn pri" id="prMan">Manage subscription</button></div><p class="note">Change plan, update your card, get receipts or cancel.</p>'}
+      <label class="f">Your Pro code</label><p class="note" style="margin-top:0">Type this into Settings → Larder Pro on another phone of yours to use Pro there too.</p>
+      <div class="inrow"><input type="text" readonly value="${esc(fmtCode(p.token))}" id="prCode" style="font-variant-numeric:tabular-nums;letter-spacing:.04em"><button class="btn" id="prCopy">Copy</button></div>
+      <p class="note" id="prMsg"></p><p class="note"><a href="${PRO_PAGE}" target="_blank" rel="noopener">Terms, privacy and refunds</a></p>`, el=>{
+      const m = el.querySelector('#prMsg');
+      const man = el.querySelector('#prMan'); if (man) man.onclick = async ()=>{ m.innerHTML = '<span class="spin"></span>Opening…'; try { const j = await proCall('/pro/portal', {token:p.token}); location.href = j.url; } catch(e){ m.textContent = e; } };
+      el.querySelector('#prCopy').onclick = async ()=>{ try { await navigator.clipboard.writeText(fmtCode(p.token)); m.textContent = 'Copied.'; } catch(e){ el.querySelector('#prCode').select(); } };
+    });
+    return;
+  }
+  openSheet(`${head('Larder Pro', why && PRO_WHY[why] ? PRO_WHY[why] : 'Everything in Larder, plus the extras that cost us money to run.')}
+    <div style="margin-top:10px">${['Up to ' + limOf('gen','gen',10) + ' AI recipes and ' + limOf('photo','photo',5) + ' shopping photos a day (free: ' + limOf('freeGen','freeGen',3) + ' recipes and ' + limOf('freePhoto','freePhoto',1) + ' photo a week)','Shared kitchen with the people you live with','Shop prices and your basket total','Dinner planner for the week'].map(t=>`<div class="ing"><span class="k" style="color:var(--acc)">✓</span><span>${t}</span></div>`).join('')}</div>
+    <div class="stack" style="margin-top:16px"><button class="btn pri" data-plan="year">£29.99 a year <small style="opacity:.75;font-weight:500">· save 37%</small></button><button class="btn" data-plan="month">£3.99 a month</button></div>
+    <p class="note">7 days free, then billed by card. Cancel any time before the trial ends and you won’t pay. Payments are handled by Stripe.</p>
+    <p class="note" id="prMsg"></p>
+    <label class="f">Have a Pro code?</label><div class="inrow"><input type="text" id="prIn" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="btn" id="prUse">Use</button></div>
+    <p class="note"><a href="${PRO_PAGE}" target="_blank" rel="noopener">Terms, privacy and refunds</a></p>`, el=>{
+    const m = el.querySelector('#prMsg');
+    el.querySelectorAll('[data-plan]').forEach(b=>b.onclick = async ()=>{ m.innerHTML = '<span class="spin"></span>Opening secure checkout…';
+      try { const j = await proCall('/pro/checkout', {plan:b.dataset.plan, dev:devId()}); location.href = j.url; } catch(e){ m.textContent = String(e); } });
+    el.querySelector('#prUse').onclick = async ()=>{ const code = el.querySelector('#prIn').value.replace(/[^a-z0-9]/gi,'').toLowerCase(); if (!code) return;
+      m.innerHTML = '<span class="spin"></span>Checking…';
+      try { const j = await proCall('/pro/status', {token:code, force:true}); if (!j.pro){ m.textContent = j.unknown ? 'That code isn’t right.' : 'That code’s subscription has ended.'; return; }
+        setPro({token:code, ...j, chk:Date.now()}); render(); sheetPro('welcome'); } catch(e){ m.textContent = String(e); } };
+  });
+}
 function sheetCost(){
+  if (!isPro()) return sheetPro('prices');
   const open = state.list.filter(x=>!x.done), c = costOf(open), store = storeName(), sp = sharedPrices();
   const when = sp && sp.updated ? new Date(sp.updated + 'T12:00').toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'}) : '';
   const loyal = {tesco:'Clubcard price', sainsburys:'Nectar price', morrisons:'More Card price'}[state.prefs.store||'tesco'] || 'member price';
@@ -1159,7 +1221,7 @@ function applyRemote(remote){
 async function hhCall(path, body, url){
   let r; try { r = await fetch((url || getServer()) + path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); } catch(e){ throw {msg:'server'}; }
   const j = await r.json().catch(()=>({}));
-  if (!r.ok) throw {msg: r.status===400 && !/kitchen/i.test(j.error||'') ? 'old' : r.status===404 ? 'nohh' : r.status===403 ? 'badcode' : 'server', status:r.status};
+  if (!r.ok) throw {msg: r.status===402 ? 'pro' : r.status===400 && !/kitchen/i.test(j.error||'') ? 'old' : r.status===404 ? 'nohh' : r.status===403 ? 'badcode' : 'server', status:r.status};
   return j;
 }
 async function hhSync(){
@@ -1180,6 +1242,7 @@ function readInvite(code){
 function hhErrText(m){
   return m==='url' ? 'Add your server address above first (it starts with https://).'
     : m==='old' ? 'Your server is the older version. Paste the latest server code into Cloudflare (see the setup guide), then try again.'
+    : m==='pro' ? 'The Larder Pro plan behind this shared kitchen has ended, so it has stopped syncing. Your food is still on this phone.'
     : m==='nohh' ? 'That shared kitchen no longer exists.' : m==='badcode' ? 'That invite code isn’t right. Ask for it again.'
     : 'Couldn’t reach your server. Check your signal and the address.';
 }
@@ -1484,12 +1547,18 @@ function sheetItem(id){
 /* adding food */
 /* ---------- daily AI limits (stop one phone running up the bill) ---------- */
 const LIMITS = {}, USE_LS = 'larder-usage';
-Object.defineProperty(LIMITS, 'photo', {get(){ const l = getCfg().limits; return l && l.photo != null ? l.photo : 5; }});
-Object.defineProperty(LIMITS, 'gen', {get(){ const l = getCfg().limits; return l && l.gen != null ? l.gen : 10; }});
-function usage(){ try { const u = JSON.parse(localStorage.getItem(USE_LS)||'{}'); return u.d===iso(today()) ? u : {d:iso(today()), photo:0, gen:0}; } catch(e){ return {d:iso(today()), photo:0, gen:0}; } }
+// Free: a few AI actions a week. Pro: the admin's daily limits.
+const limOf = (k, free, dflt) => { const l = getCfg().limits || {}; const v = l[isPro() ? k : free]; return v != null ? v : dflt; };
+Object.defineProperty(LIMITS, 'photo', {get(){ return limOf('photo', 'freePhoto', isPro() ? 5 : 1); }});
+Object.defineProperty(LIMITS, 'gen', {get(){ return limOf('gen', 'freeGen', isPro() ? 10 : 3); }});
+const periodKey = () => isPro() ? iso(today()) : 'w' + iso(weekStart());
+function weekStart(){ const d = today(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; }
+function usage(){ const k = periodKey(); try { const u = JSON.parse(localStorage.getItem(USE_LS)||'{}'); return u.d===k ? u : {d:k, photo:0, gen:0}; } catch(e){ return {d:k, photo:0, gen:0}; } }
 const left = k => Math.max(0, LIMITS[k] - (usage()[k]||0));
 function spend(k){ const u = usage(); u[k] = (u[k]||0) + 1; try { localStorage.setItem(USE_LS, JSON.stringify(u)); } catch(e){} }
-function canSpend(k){ if (left(k) > 0) return true; toast(k==='photo' ? `That’s today’s ${LIMITS.photo} photos used. More tomorrow.` : `That’s today’s ${LIMITS.gen} AI recipes used. More tomorrow.`); return false; }
+function canSpend(k){ if (left(k) > 0) return true;
+  if (!isPro()){ sheetPro(k==='photo' ? 'photo' : 'gen'); return false; }
+  toast(k==='photo' ? `That’s today’s ${LIMITS.photo} photos used. More tomorrow.` : `That’s today’s ${LIMITS.gen} AI recipes used. More tomorrow.`); return false; }
 
 /* ---------- adding food ---------- */
 const CAM = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.5"/></svg>';
@@ -2027,7 +2096,8 @@ function vList(){
   let h = pageTop('Shopping') + `<form id="lf" class="inrow"><input type="text" id="li" placeholder="Add something" autocomplete="off" enterkeyhint="done"><button class="btn pri" type="submit" aria-label="Add">Add</button></form>`;
   if (!state.list.length) return h + `<div class="empty"><p class="big">Nothing to buy</p><p>Things you run out of, and anything your dinners need, land here.</p></div>`;
   const groups = {}; open.forEach(x=>(groups[aisleOf(x.name)] = groups[aisleOf(x.name)] || []).push(x));
-  if (open.length){ const c = costOf(open); h += `<button class="cost" data-act="cost"><span>About <b>${gbp(c.total)}</b> at ${esc(storeName())}</span><small>${c.live ? 'this week’s prices' : 'estimate'} ›</small></button>`; }
+  if (open.length && !isPro()) h += `<button class="cost" data-act="cost"><span>What will this cost?</span><small>Pro ›</small></button>`;
+  else if (open.length){ const c = costOf(open); h += `<button class="cost" data-act="cost"><span>About <b>${gbp(c.total)}</b> at ${esc(storeName())}</span><small>${c.live ? 'this week’s prices' : 'estimate'} ›</small></button>`; }
   const row = x => `<div class="row ${x.done?'done':''}"><button class="tick" data-act="ltog" data-id="${x.id}" aria-label="${x.done?'Untick':'Tick'} ${esc(x.name)}"></button><button class="m" data-act="ltog" data-id="${x.id}" style="text-align:left"><div class="n">${esc(x.name)}</div>${x.reason && !x.done ? `<div class="s">${esc(x.reason)}</div>` : ''}</button>${x.done ? '' : `<a class="ib" href="${storeUrl(x.name)}" target="_blank" rel="noopener" aria-label="Find at ${esc(storeName())}" style="color:var(--mut)">${IC.ext}</a>`}</div>`;
   AISLES.filter(a=>groups[a]).forEach(a=>{ h += `<div class="sec"><h2>${a}</h2></div><div class="rows">${groups[a].map(row).join('')}</div>`; });
   if (done.length) h += `<div class="sec"><h2>In your basket · ${done.length}</h2><button class="lnk" data-act="lclear">Clear</button></div><div class="rows">${done.map(row).join('')}</div>
@@ -2053,15 +2123,16 @@ function sheetSettings(focus){
       <button class="tog ${p.autoList?'on':''}" id="sAuto"><span>Put expired food on the list</span><i></i></button>
       <label class="f">Where you shop</label><select id="sStore">${Object.entries(STORES).map(([k,v])=>`<option value="${k}" ${(p.store||'tesco')===k?'selected':''}>${v[0]}</option>`).join('')}</select>
     </div></details>
+    <button class="row" id="sPro" style="margin:4px 0 6px"><div class="m"><div class="n"><b>Larder Pro</b></div><div class="s">${isPro() ? (getPro().comp ? 'On (gift)' : getPro().status==='trialing' ? 'Free trial' : 'On') : '7 days free, then £3.99 a month'}</div></div><span class="mut">›</span></button>
     <details ${focus==='ai'?'open':''} id="aiSec"><summary>AI</summary><div>
-      <p class="note" style="margin-top:0">${hasGemini() ? `On. Photos and recipe writing are set up for everyone. Today you have ${left('photo')} of ${LIMITS.photo} photos and ${left('gen')} of ${LIMITS.gen} AI recipes left.` : 'Not set up yet. The admin turns it on in Settings → Admin.'}</p>
+      <p class="note" style="margin-top:0">${hasGemini() ? `On. ${isPro() ? 'Today' : 'This week'} you have ${left('photo')} of ${LIMITS.photo} ${LIMITS.photo===1?'photo':'photos'} and ${left('gen')} of ${LIMITS.gen} AI recipes left.${isPro() ? '' : ' Larder Pro gives you more every day.'}` : 'Not set up yet. The admin turns it on in Settings → Admin.'}</p>
     </div></details>
     <details ${focus==='hh'?'open':''}><summary>Reminders &amp; sharing</summary><div>
       <label class="f">Expiry reminders at</label><select id="nHour">${[[8,'8am'],[12,'Midday'],[17,'5pm'],[19,'7pm']].map(([v,l])=>`<option value="${v}" ${(pu.hour||17)===v?'selected':''}>${l}</option>`).join('')}</select>
       <div class="btns"><button class="btn" id="nOn">${pu.on?'Update':'Turn on'}</button>${pu.on?'<button class="btn" id="nTest">Test</button><button class="btn bad" id="nOff">Off</button>':''}</div><p class="note" id="nStatus">${pu.on?'Reminders are on.':''}</p>
       <label class="f">Shared kitchen</label>
       ${hh ? `<p class="note" style="margin-top:0"><span id="sync"></span></p><div class="btns"><button class="btn pri" id="hShare">Invite someone</button><button class="btn" id="hSync">Sync</button></div><div class="btns" style="margin-top:8px"><button class="btn bad" id="hLeave">Stop sharing on this phone</button></div>`
-        : `<p class="note" style="margin-top:0">Share one kitchen, list and week with the people you live with.</p><div class="btns"><button class="btn" id="hNew">Start one</button></div><div class="inrow" style="margin-top:10px"><input type="text" id="hCode" placeholder="Invite code LARDER-…" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" id="hJoin">Join</button></div>`}
+        : `<p class="note" style="margin-top:0">Share one kitchen, list and week with the people you live with.</p><div class="btns"><button class="btn" id="hNew">Start one${isPro() ? '' : ' · Pro'}</button></div><div class="inrow" style="margin-top:10px"><input type="text" id="hCode" placeholder="Invite code LARDER-…" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" id="hJoin">Join</button></div>`}
       <p class="note" id="hStatus"></p>
     </div></details>
     <details><summary>Your data</summary><div>
@@ -2090,8 +2161,9 @@ function sheetSettings(focus){
     const nt = el.querySelector('#nTest'); if (nt) nt.onclick = async ()=>{ ns.innerHTML = '<span class="spin"></span>Sending…'; try { const reg = await swReady(), sub = await reg.pushManager.getSubscription(); if (!sub) throw {msg:'nosub'}; const r = await postPush('/test', {endpoint:sub.endpoint}); ns.textContent = r.ok ? 'Sent. Lock your phone to see it.' : 'Couldn’t send.'; } catch(e){ ns.textContent = pushErr(e); } };
     const nf = el.querySelector('#nOff'); if (nf) nf.onclick = async ()=>{ await disablePush(); ns.textContent = 'Reminders are off.'; nf.remove(); };
     const hs = el.querySelector('#hStatus');
-    const hNew = el.querySelector('#hNew'); if (hNew) hNew.onclick = async ()=>{ hs.innerHTML = '<span class="spin"></span>Setting up…';
-      try { const u = getServer(); const j = await hhCall('/hh/new', {state:shareable(state)}, u); setHH({url:u, id:j.id, secret:j.secret}); hhLast = Date.now(); sheetSettings('hh'); toast('Shared kitchen started'); } catch(e){ hs.textContent = hhErrText(e.msg); } };
+    const sPro = el.querySelector('#sPro'); if (sPro) sPro.onclick = ()=>sheetPro();
+    const hNew = el.querySelector('#hNew'); if (hNew) hNew.onclick = async ()=>{ if (!isPro()) return sheetPro('shared'); hs.innerHTML = '<span class="spin"></span>Setting up…';
+      try { const u = getServer(); const j = await hhCall('/hh/new', {state:shareable(state), pro:getPro().token}, u); setHH({url:u, id:j.id, secret:j.secret}); hhLast = Date.now(); sheetSettings('hh'); toast('Shared kitchen started'); } catch(e){ hs.textContent = hhErrText(e.msg); } };
     const hJoin = el.querySelector('#hJoin'); if (hJoin) hJoin.onclick = async ()=>{ const inv = readInvite(el.querySelector('#hCode').value); if (!inv){ hs.textContent = 'That doesn’t look like an invite code.'; return; }
       hs.innerHTML = '<span class="spin"></span>Joining…'; try { let j; for (let t = 0; ; t++){ try { j = await hhCall('/hh/sync', {id:inv.id, secret:inv.secret}, inv.url); break; } catch(e){ if (e.msg!=='nohh' || t >= 7) throw e; hs.innerHTML = '<span class="spin"></span>Waiting for the new kitchen to reach this phone…'; await new Promise(r=>setTimeout(r, 10000)); } } if (!getServer()) setServer(inv.url); sheetJoin(j.state||{}, inv); } catch(e){ hs.textContent = hhErrText(e.msg); } };
     const hShare = el.querySelector('#hShare'); if (hShare) hShare.onclick = async ()=>{ const code = inviteCode(hh), text = `Join my Larder kitchen: open Larder → Settings → Reminders & sharing, and paste this code:\n\n${code}`;
@@ -2123,15 +2195,20 @@ async function adminUnlock(el){
     <label class="f">Everyday model</label><select id="adModel">${[['gemini-3.8-flash','Gemini 3.8 Flash (needs billing)'],['gemini-3.5-flash','Gemini 3.5 Flash (free)'],['gemini-3.1-flash-lite','Gemini 3.1 Flash-Lite (free, fastest)']].map(([v,l])=>`<option value="${v}" ${c.model===v?'selected':''}>${l}</option>`).join('')}</select>
     <button class="tog ${c.best?'on':''}" id="adBest"><span>Gemini 4 Argon for recipes and photos<small>Best quality, slower, needs billing</small></span><i></i></button>
     <label class="f">Daily limits per phone: photos and AI recipes</label><div class="inrow"><input type="number" id="adPh" value="${c.limits.photo}" min="0"><input type="number" id="adGen" value="${c.limits.gen}" min="0"></div>
+    <label class="f">Free users, per week: photos and AI recipes</label><div class="inrow"><input type="number" id="adFPh" value="${c.limits.freePhoto ?? 1}" min="0"><input type="number" id="adFGen" value="${c.limits.freeGen ?? 3}" min="0"></div>
     <label class="f">Daily limit for everyone together (AI actions)</label><input type="number" id="adTot" value="${c.limits.total}" min="0">
+    <label class="f">Larder Pro</label><p class="note" style="margin-top:0">${j.stripe ? 'Payments are connected.' : 'Payments aren’t connected yet (add STRIPE_KEY to the server).'} Gift codes give someone Pro for free.</p>
+    <div class="inrow"><input type="text" id="adNote" placeholder="Who it’s for (optional)"><button class="btn" id="adGift">Make a gift code</button></div><p class="note" id="adGiftOut"></p>
     <label class="f">New admin code (optional)</label><input type="password" id="adNew" placeholder="Leave empty to keep it" autocomplete="off">
     <div class="btns"><button class="btn pri" id="adSave">Save for everyone</button><button class="btn" id="adTest">Test AI</button></div><p class="note" id="adMsg2"></p>`;
   let best = !!c.best; box.querySelector('#adBest').onclick = ev=>{ best = !best; ev.currentTarget.classList.toggle('on', best); };
   const m2 = box.querySelector('#adMsg2');
   box.querySelector('#adSave').onclick = async ()=>{ m2.innerHTML = '<span class="spin"></span>Saving…';
-    const set = {model:box.querySelector('#adModel').value, best, limits:{photo:+box.querySelector('#adPh').value, gen:+box.querySelector('#adGen').value, total:+box.querySelector('#adTot').value}};
+    const set = {model:box.querySelector('#adModel').value, best, limits:{photo:+box.querySelector('#adPh').value, gen:+box.querySelector('#adGen').value, freePhoto:+box.querySelector('#adFPh').value, freeGen:+box.querySelector('#adFGen').value, total:+box.querySelector('#adTot').value}};
     const k = box.querySelector('#adKey').value.trim(); if (k) set.key = k; const nc = box.querySelector('#adNew').value; if (nc){ if (nc.length < 6){ m2.textContent = 'The new code needs at least 6 characters.'; return; } set.newCode = nc; }
     try { await adminCall('/admin/config', {code, set}); await loadCfg(); m2.textContent = '✓ Saved. Every phone picks this up the next time it opens Larder.'; box.querySelector('#adKey').value = ''; } catch(e){ m2.textContent = e; } };
+  box.querySelector('#adGift').onclick = async ()=>{ const out = box.querySelector('#adGiftOut'); out.innerHTML = '<span class="spin"></span>Making…';
+    try { const r = await adminCall('/admin/procode', {code, note:box.querySelector('#adNote').value}); out.innerHTML = `Gift code: <b style="user-select:all">${fmtCode(r.token)}</b><br>They type it into Settings → Larder Pro → Have a Pro code?`; } catch(e){ out.textContent = e; } };
   box.querySelector('#adTest').onclick = async ()=>{ m2.innerHTML = '<span class="spin"></span>Testing…'; await loadCfg();
     try { parseJSON(await gemini('Reply with this JSON only: {"ok":true}', false)); m2.textContent = '✓ AI works.'; } catch(e){ m2.textContent = aiErrMsg(e); } };
 }
@@ -2232,7 +2309,7 @@ document.addEventListener('click', ev=>{
   if (a==='browse') return sheetBrowse();
   if (a==='import') return aiAvailable() ? sheetImport() : sheetSettings('ai');
   if (a==='allbook'){ ui.allBook = true; render(); return; }
-  if (a==='plan') return sheetPlanSetup();
+  if (a==='plan') return isPro() ? sheetPlanSetup() : sheetPro('plan');
   if (a==='planpick') return sheetPick(b.dataset.d);
   if (a==='planopen') return sheetRecipeFromPlan(b.dataset.d, b.dataset.id);
   if (a==='planclear'){ snapUndo(); weekDays().forEach(d=>{ const e = dinnerOf(d); if (e) planRemove(d, e.raw); }); save(); render(); toastUndo('Week cleared'); return; }
@@ -2264,13 +2341,13 @@ if (!state.prefs.v2){   // Larder 2: dinners-only week, no food diary
 }
 snapMap = recMap(state);
 sweep(); save(); render();
-initRemote(); initSample(); loadCfg(); loadPrices();
+initRemote(); initSample(); loadCfg(); loadPrices(); claimPro(); refreshPro();
 if ('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 mirrorNotify(); setTimeout(syncPush, 1500);
 if (!state.prefs.onboarded) openOnb();
 if (getHH()) setTimeout(hhSync, 800);
 setInterval(()=>{ if (!document.hidden && getHH()) hhSync(); }, 45000);
-document.addEventListener('visibilitychange', ()=>{ if (!document.hidden){ setBadge(); loadCfg(); loadPrices(); if (getHH()) hhSync(); if (sweep()){ save(); render(); } } });
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden){ setBadge(); loadCfg(); loadPrices(); refreshPro(); if (getHH()) hhSync(); if (sweep()){ save(); render(); } } });
 
 </script>
 </body>

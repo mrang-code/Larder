@@ -222,7 +222,7 @@ async function stripe(env, method, path, params) {
   if (!env.STRIPE_KEY) throw new Error('Payments are not set up yet');
   const q = params ? form(params) : '';
   const r = await fetch('https://api.stripe.com/v1/' + path + (method === 'GET' && q ? '?' + q : ''), {method,
-    headers: {'Authorization': 'Bearer ' + env.STRIPE_KEY, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': '2024-06-20'},
+    headers: {'Authorization': 'Bearer ' + env.STRIPE_KEY, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': '2025-03-31.basil'},
     body: method === 'GET' ? undefined : q});
   const j = await r.json();
   if (!r.ok) throw new Error((j.error && j.error.message) || ('Stripe error ' + r.status));
@@ -267,7 +267,7 @@ async function pro(path, b, env, origin) {
     const sid = String(b.session || ''); if (!/^cs_[A-Za-z0-9_]{10,200}$/.test(sid)) return json({error: 'Bad session'}, 400, origin);
     const had = await env.DB.get('sess:' + sid); if (had) { const p = await proFor(env, had); return json({token: had, ...proView(p)}, 200, origin); }
     const s = await stripe(env, 'GET', 'checkout/sessions/' + sid, {expand: ['subscription']});
-    if (s.status !== 'complete' || !s.subscription) return json({error: 'That payment isn’t finished yet'}, 409, origin);
+    if (s.status !== 'complete' || !s.subscription) return json({error: 'That payment is not finished yet'}, 409, origin);
     const token = rid(16), rec = fromSub({t: Date.now(), email: (s.customer_details && s.customer_details.email) || ''}, s.subscription);
     await env.DB.put('pro:' + token, JSON.stringify(rec)); await env.DB.put('sess:' + sid, token, {expirationTtl: 30 * 86400});
     try { await stripe(env, 'POST', 'subscriptions/' + rec.sub, {metadata: {larder_code: token}}); } catch (e) {}
@@ -343,12 +343,11 @@ export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(runDue(env)); }
 };
 async function handle(req, env) {
-  {
     const origin = req.headers.get('Origin') || '';
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors(origin)});
     if (req.method === 'GET' && url.pathname === '/') {
-      return new Response('Larder server is running (v6).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB'), {headers: {'Content-Type': 'text/plain', ...cors(origin)}});
+      return new Response('Larder server is running (v6).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB') + '\nPayments: ' + (env.STRIPE_KEY ? 'connected' : 'not set up'), {headers: {'Content-Type': 'text/plain', ...cors(origin)}});
     }
     if (!env.DB) return json({error: 'Storage is not connected. Add a KV binding named DB.'}, 500, origin);
     if (req.method === 'GET' && url.pathname === '/key') return json({key: (await vapid(env)).pub}, 200, origin);
@@ -382,5 +381,4 @@ async function handle(req, env) {
       return json({ok: status >= 200 && status < 300, status}, 200, origin);
     }
     return json({error: 'Not found'}, 404, origin);
-  }
 }
