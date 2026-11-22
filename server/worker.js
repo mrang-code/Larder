@@ -79,7 +79,7 @@ function cleanState(st) {
 async function household(path, b, env, origin) {
   if (path === '/hh/new') {
     const pro = await proFor(env, b.pro);
-    if (!pro.active) return json({error: 'Shared kitchens are part of Larder Pro', pro: false}, 402, origin);
+    if (!pro.active && (await getCfg(env)).payments) return json({error: 'Shared kitchens are part of Larder Pro', pro: false}, 402, origin);
     const id = rid(10), secret = rid(24), state = cleanState(b.state);
     await env.DB.put('hh:' + id, JSON.stringify({h: await sha(secret), state, t: Date.now(), owner: pro.token}));
     return json({id, secret, state}, 200, origin);
@@ -90,7 +90,7 @@ async function household(path, b, env, origin) {
     if (!rec) return json({error: 'No such kitchen'}, 404, origin);
     if (rec.h !== await sha(b.secret || '')) return json({error: 'Wrong code'}, 403, origin);
     // Kitchens made before Pro existed have no owner and stay free.
-    if (rec.owner && !(await proFor(env, rec.owner)).active) return json({error: 'The Larder Pro plan for this shared kitchen has ended', pro: false}, 402, origin);
+    if (rec.owner && (await getCfg(env)).payments && !(await proFor(env, rec.owner)).active) return json({error: 'The Larder Pro plan for this shared kitchen has ended', pro: false}, 402, origin);
     if (b.state && typeof b.state === 'object') {
       const before = JSON.stringify(rec.state), merged = mergeStates(cleanState(b.state), rec.state);
       if (JSON.stringify(merged) !== before) {      // only write when something changed (storage writes are limited)
@@ -104,9 +104,9 @@ async function household(path, b, env, origin) {
 }
 
 // ---------- shared settings, admin and AI ----------
-const DEFAULTS = {key: '', model: 'gemini-3.5-flash', best: false, limits: {photo: 5, gen: 10, total: 150, freePhoto: 1, freeGen: 3}};
+const DEFAULTS = {key: '', model: 'gemini-3.5-flash', best: false, payments: false, limits: {photo: 5, gen: 10, total: 150, freePhoto: 1, freeGen: 3}};
 async function getCfg(env) { const c = await env.DB.get('cfg', 'json'); return {...DEFAULTS, ...(c || {}), limits: {...DEFAULTS.limits, ...((c || {}).limits || {})}}; }
-const publicCfg = c => ({ai: !!c.key, model: c.model, best: !!c.best, limits: c.limits});
+const publicCfg = c => ({payments: !!c.payments, ai: !!c.key, model: c.model, best: !!c.best, limits: c.limits});
 const okModel = m => /^gemini-[a-z0-9.\-]{1,40}$/.test(String(m || ''));
 const today = () => new Date().toISOString().slice(0, 10);
 async function adminOk(env, code, ip) {
@@ -132,7 +132,7 @@ async function admin(path, b, env, origin, ip) {
     if (typeof s.key === 'string' && s.key.trim()) c.key = s.key.trim().slice(0, 200);
     if (s.clearKey) c.key = '';
     if (okModel(s.model)) c.model = s.model;
-    if (typeof s.best === 'boolean') c.best = s.best;
+    if (typeof s.best === 'boolean') c.best = s.best; if (typeof s.payments === 'boolean') c.payments = s.payments;
     if (s.limits && typeof s.limits === 'object') ['photo', 'gen', 'total', 'freePhoto', 'freeGen'].forEach(k => { const n = Math.round(+s.limits[k]); if (n >= 0 && n <= 10000) c.limits[k] = n; });
     if (typeof s.newCode === 'string' && s.newCode.length >= 6) { const salt = rid(16); await env.DB.put('admin', JSON.stringify({salt, h: await sha(salt + s.newCode)})); }
     await env.DB.put('cfg', JSON.stringify(c));
@@ -195,7 +195,7 @@ async function ai(b, env, origin) {
   if (!c.key) return json({error: {code: 503, message: 'AI is not set up yet. Ask the admin to add a Gemini key.'}}, 503, origin);
   const dev = String(b.dev || ''), aid = String(b.aid || ''), kind = ['photo', 'gen', 'other', 'price'].includes(b.kind) ? b.kind : 'other';
   if (!/^[a-z0-9]{8,24}$/.test(dev) || !/^[a-z0-9]{6,24}$/.test(aid)) return json({error: {code: 400, message: 'Bad request'}}, 400, origin);
-  const pro = (await proFor(env, b.pro)).active;
+  const pro = !c.payments || (await proFor(env, b.pro)).active;
   const over = await spendAI(env, c, dev, kind, aid, pro);
   if (over) return json({error: {code: 429, message: 'limit:' + over}}, 429, origin);
   const model = okModel(b.model) ? b.model : c.model;
@@ -257,7 +257,7 @@ async function proFor(env, token, force) {
 }
 const proView = p => p.rec ? {pro: p.active, comp: !!p.rec.comp, status: p.rec.comp ? 'gift' : p.rec.status, plan: p.rec.plan || '', end: p.rec.end || 0, cancel: !!p.rec.cancel} : {pro: false};
 async function pro(path, b, env, origin) {
-  if (path === '/pro/checkout') {
+  if (path === '/pro/checkout') { if (!(await getCfg(env)).payments) return json({error: 'Larder Pro is not available right now'}, 403, origin);
     const plan = b.plan === 'year' ? 'year' : 'month';
     const s = await stripe(env, 'POST', 'checkout/sessions', {mode: 'subscription', line_items: [{price: await priceId(env, plan), quantity: 1}],
       subscription_data: {trial_period_days: 7, metadata: {app: 'larder'}}, allow_promotion_codes: true,
@@ -348,7 +348,7 @@ async function handle(req, env) {
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors(origin)});
     if (req.method === 'GET' && url.pathname === '/') {
-      return new Response('Larder server is running (v6).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB') + '\nPayments: ' + (env.STRIPE_KEY ? 'connected' : 'not set up'), {headers: {'Content-Type': 'text/plain', ...cors(origin)}});
+      return new Response('Larder server is running (v7).\nStorage: ' + (env.DB ? 'connected' : 'NOT connected - add a KV binding named DB') + '\nPayments: ' + (env.STRIPE_KEY ? 'connected' : 'not set up'), {headers: {'Content-Type': 'text/plain', ...cors(origin)}});
     }
     if (!env.DB) return json({error: 'Storage is not connected. Add a KV binding named DB.'}, 500, origin);
     if (req.method === 'GET' && url.pathname === '/key') return json({key: (await vapid(env)).pub}, 200, origin);

@@ -1004,12 +1004,13 @@ const gbp = p => '£' + (p/100).toFixed(2);
 const PRO_LS = 'larder-pro', PRO_PAGE = 'pro.html';
 function getPro(){ try { return JSON.parse(localStorage.getItem(PRO_LS)||'{}'); } catch(e){ return {}; } }
 function setPro(p){ try { localStorage.setItem(PRO_LS, JSON.stringify(p)); } catch(e){} }
-const isPro = () => { const p = getPro(); return !!(p.token && p.pro); };
+const payOn = () => getCfg().payments === true;   // Larder Pro payments switch (Settings → Admin). Off: everything is free.
+const isPro = () => { if (!payOn()) return true; const p = getPro(); return !!(p.token && p.pro); };
 async function proCall(path, body){
   let r; try { r = await fetch(getServer() + path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body||{})}); } catch(e){ throw 'Couldn’t reach the Larder server. Check your signal.'; }
   const j = await r.json().catch(()=>({})); if (!r.ok) throw (j.error && (j.error.message || j.error)) || ('Error ' + r.status); return j;
 }
-async function refreshPro(force){
+async function refreshPro(force){ if (!payOn()) return;
   const p = getPro(); if (!p.token) return;
   if (!force && Date.now() - (p.chk||0) < 3 * 3600e3) return;
   try { const j = await proCall('/pro/status', {token:p.token, force:!!force}); const was = !!p.pro;
@@ -2123,7 +2124,7 @@ function sheetSettings(focus){
       <button class="tog ${p.autoList?'on':''}" id="sAuto"><span>Put expired food on the list</span><i></i></button>
       <label class="f">Where you shop</label><select id="sStore">${Object.entries(STORES).map(([k,v])=>`<option value="${k}" ${(p.store||'tesco')===k?'selected':''}>${v[0]}</option>`).join('')}</select>
     </div></details>
-    <button class="row" id="sPro" style="margin:4px 0 6px"><div class="m"><div class="n"><b>Larder Pro</b></div><div class="s">${isPro() ? (getPro().comp ? 'On (gift)' : getPro().status==='trialing' ? 'Free trial' : 'On') : '7 days free, then £3.99 a month'}</div></div><span class="mut">›</span></button>
+    ${payOn() ? `<button class="row" id="sPro" style="margin:4px 0 6px"><div class="m"><div class="n"><b>Larder Pro</b></div><div class="s">${isPro() ? (getPro().comp ? 'On (gift)' : getPro().status==='trialing' ? 'Free trial' : 'On') : '7 days free, then £3.99 a month'}</div></div><span class="mut">›</span></button>` : ''}
     <details ${focus==='ai'?'open':''} id="aiSec"><summary>AI</summary><div>
       <p class="note" style="margin-top:0">${hasGemini() ? `On. ${isPro() ? 'Today' : 'This week'} you have ${left('photo')} of ${LIMITS.photo} ${LIMITS.photo===1?'photo':'photos'} and ${left('gen')} of ${LIMITS.gen} AI recipes left.${isPro() ? '' : ' Larder Pro gives you more every day.'}` : 'Not set up yet. The admin turns it on in Settings → Admin.'}</p>
     </div></details>
@@ -2197,14 +2198,15 @@ async function adminUnlock(el){
     <label class="f">Daily limits per phone: photos and AI recipes</label><div class="inrow"><input type="number" id="adPh" value="${c.limits.photo}" min="0"><input type="number" id="adGen" value="${c.limits.gen}" min="0"></div>
     <label class="f">Free users, per week: photos and AI recipes</label><div class="inrow"><input type="number" id="adFPh" value="${c.limits.freePhoto ?? 1}" min="0"><input type="number" id="adFGen" value="${c.limits.freeGen ?? 3}" min="0"></div>
     <label class="f">Daily limit for everyone together (AI actions)</label><input type="number" id="adTot" value="${c.limits.total}" min="0">
-    <label class="f">Larder Pro</label><p class="note" style="margin-top:0">${j.stripe ? 'Payments are connected.' : 'Payments aren’t connected yet (add STRIPE_KEY to the server).'} Gift codes give someone Pro for free.</p>
+    <label class="f">Larder Pro</label><button class="tog ${c.payments?'on':''}" id="adPay"><span>Larder Pro payments<small>Off: everything is free for everyone and Pro is hidden</small></span><i></i></button><p class="note">${j.stripe ? 'Payments are connected.' : 'Payments aren’t connected yet (add STRIPE_KEY to the server).'} Gift codes give someone Pro for free.</p>
     <div class="inrow"><input type="text" id="adNote" placeholder="Who it’s for (optional)"><button class="btn" id="adGift">Make a gift code</button></div><p class="note" id="adGiftOut"></p>
     <label class="f">New admin code (optional)</label><input type="password" id="adNew" placeholder="Leave empty to keep it" autocomplete="off">
     <div class="btns"><button class="btn pri" id="adSave">Save for everyone</button><button class="btn" id="adTest">Test AI</button></div><p class="note" id="adMsg2"></p>`;
   let best = !!c.best; box.querySelector('#adBest').onclick = ev=>{ best = !best; ev.currentTarget.classList.toggle('on', best); };
+  let pay = !!c.payments; box.querySelector('#adPay').onclick = ev=>{ pay = !pay; ev.currentTarget.classList.toggle('on', pay); };
   const m2 = box.querySelector('#adMsg2');
   box.querySelector('#adSave').onclick = async ()=>{ m2.innerHTML = '<span class="spin"></span>Saving…';
-    const set = {model:box.querySelector('#adModel').value, best, limits:{photo:+box.querySelector('#adPh').value, gen:+box.querySelector('#adGen').value, freePhoto:+box.querySelector('#adFPh').value, freeGen:+box.querySelector('#adFGen').value, total:+box.querySelector('#adTot').value}};
+    const set = {model:box.querySelector('#adModel').value, best, payments:pay, limits:{photo:+box.querySelector('#adPh').value, gen:+box.querySelector('#adGen').value, freePhoto:+box.querySelector('#adFPh').value, freeGen:+box.querySelector('#adFGen').value, total:+box.querySelector('#adTot').value}};
     const k = box.querySelector('#adKey').value.trim(); if (k) set.key = k; const nc = box.querySelector('#adNew').value; if (nc){ if (nc.length < 6){ m2.textContent = 'The new code needs at least 6 characters.'; return; } set.newCode = nc; }
     try { await adminCall('/admin/config', {code, set}); await loadCfg(); m2.textContent = '✓ Saved. Every phone picks this up the next time it opens Larder.'; box.querySelector('#adKey').value = ''; } catch(e){ m2.textContent = e; } };
   box.querySelector('#adGift').onclick = async ()=>{ const out = box.querySelector('#adGiftOut'); out.innerHTML = '<span class="spin"></span>Making…';
