@@ -177,6 +177,21 @@ select.psel{padding-right:10px;-webkit-appearance:none;appearance:none;text-alig
 .hb{display:inline-flex;align-items:flex-end;gap:2px;height:16px}.hb i{width:4px;border-radius:2px;background:var(--line)}.hb i:nth-child(1){height:6px}.hb i:nth-child(2){height:9px}.hb i:nth-child(3){height:12px}.hb i:nth-child(4){height:16px}.hb i.on{background:var(--warn)}
 .stept{font-size:25px;line-height:1.35;letter-spacing:-.01em;margin-top:14px}
 .timer{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:16px;background:var(--acc-soft);color:var(--acc);font-weight:600;font-size:14px;font-variant-numeric:tabular-nums}
+.ia{margin:22px 0 4px;border-radius:22px;background:var(--soft);padding:24px 18px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.ia .ibar{display:flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:6px 8px;width:100%;max-width:300px}
+.ia .iurl{flex:1;min-width:0;font-size:13px;color:var(--mut);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ia .ik{width:38px;height:38px;flex:none;border-radius:50%;display:grid;place-items:center;color:var(--fg)}
+.ia .ik svg{width:20px;height:20px}
+.ia .ik.hi{background:var(--acc);color:var(--acc-fg);box-shadow:0 0 0 6px var(--acc-soft)}
+.ia .menu{width:100%;max-width:300px;background:var(--bg);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.ia .mi{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid var(--line);font-size:15px}
+.ia .mi:first-child{border-top:0}.ia .mi svg{width:20px;height:20px;flex:none}
+.ia .mi.hi{background:var(--acc-soft);color:var(--acc);font-weight:600}
+.ia .mi.dim{color:var(--mut)}
+.ia .pillb{display:inline-flex;align-items:center;height:32px;padding:0 14px;border-radius:16px;font-weight:600;font-size:15px;background:var(--acc);color:var(--acc-fg);box-shadow:0 0 0 6px var(--acc-soft)}
+.ia .tg{width:44px;height:26px;border-radius:13px;background:#34C759;position:relative;flex:none}.ia .tg:after{content:"";position:absolute;right:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff}
+.ia .appic{width:76px;height:76px;border-radius:19px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
+.ia .cap{font-size:13px;color:var(--mut);margin-top:-4px}
 .big{font-size:28px;line-height:1.2;font-weight:700;letter-spacing:-.02em;margin:0}
 .card{background:var(--soft);border-radius:18px;padding:22px}
 .video{position:relative;border-radius:18px;overflow:hidden;background:#000;aspect-ratio:4/3;margin-top:10px}
@@ -208,6 +223,7 @@ select.psel{padding-right:10px;-webkit-appearance:none;appearance:none;text-alig
   <div class="sheet" id="sheet"><div class="grab"></div><div class="in" id="sheetBody"></div></div>
   <div class="ov" id="cook" hidden></div>
   <div class="ov" id="onb" hidden></div>
+  <div class="ov" id="inst" hidden></div>
   <div class="ov" id="scan" hidden></div>
   <div class="ov" id="check" hidden></div>
   <div class="toast" id="toast"></div>
@@ -1415,7 +1431,7 @@ const pageTop = (title, extra) => `<div class="top"><h1>${title}</h1><div class=
 const head = (title, sub) => `<div class="shead"><div><h2>${title}</h2>${sub?`<p class="meta">${sub}</p>`:''}</div><button class="x" data-act="close" aria-label="Close">×</button></div>`;
 function openSheet(html, mount){ $('#sheetBody').innerHTML = html; $('#app').classList.add('open'); $('#sheet').scrollTop = 0; if (mount) mount($('#sheetBody')); }
 function closeSheet(){ $('#app').classList.remove('open'); afterOverlay(); }
-function overlayOpen(){ return $('#app').classList.contains('open') || !!cook || !!onb || !!scan || !!chk; }
+function overlayOpen(){ return $('#app').classList.contains('open') || !!cook || !!onb || !!scan || !!chk || !!inst; }
 function afterOverlay(){ if (hhPending && !overlayOpen()){ const r = hhPending; hhPending = null; setTimeout(()=>applyRemote(r), 250); } }
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.remove('act'); t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(()=>t.classList.remove('show'), 2600); }
 function toastUndo(msg, extra){
@@ -2124,6 +2140,7 @@ function sheetSettings(focus){
       <button class="tog ${p.autoList?'on':''}" id="sAuto"><span>Put expired food on the list</span><i></i></button>
       <label class="f">Where you shop</label><select id="sStore">${Object.entries(STORES).map(([k,v])=>`<option value="${k}" ${(p.store||'tesco')===k?'selected':''}>${v[0]}</option>`).join('')}</select>
     </div></details>
+    ${canInstall() ? `<button class="row" id="sInst" style="margin:4px 0 6px"><div class="m"><div class="n"><b>Add Larder to your Home Screen</b></div><div class="s">Opens like an app and can send reminders</div></div><span class="mut">›</span></button>` : ''}
     ${payOn() ? `<button class="row" id="sPro" style="margin:4px 0 6px"><div class="m"><div class="n"><b>Larder Pro</b></div><div class="s">${isPro() ? (getPro().comp ? 'On (gift)' : getPro().status==='trialing' ? 'Free trial' : 'On') : '7 days free, then £3.99 a month'}</div></div><span class="mut">›</span></button>` : ''}
     <details ${focus==='ai'?'open':''} id="aiSec"><summary>AI</summary><div>
       <p class="note" style="margin-top:0">${hasGemini() ? `On. ${isPro() ? 'Today' : 'This week'} you have ${left('photo')} of ${LIMITS.photo} ${LIMITS.photo===1?'photo':'photos'} and ${left('gen')} of ${LIMITS.gen} AI recipes left.${isPro() ? '' : ' Larder Pro gives you more every day.'}` : 'Not set up yet. The admin turns it on in Settings → Admin.'}</p>
@@ -2163,6 +2180,7 @@ function sheetSettings(focus){
     const nf = el.querySelector('#nOff'); if (nf) nf.onclick = async ()=>{ await disablePush(); ns.textContent = 'Reminders are off.'; nf.remove(); };
     const hs = el.querySelector('#hStatus');
     const sPro = el.querySelector('#sPro'); if (sPro) sPro.onclick = ()=>sheetPro();
+    const sInst = el.querySelector('#sInst'); if (sInst) sInst.onclick = ()=>{ closeSheet(); openInst(); };
     const hNew = el.querySelector('#hNew'); if (hNew) hNew.onclick = async ()=>{ if (!isPro()) return sheetPro('shared'); hs.innerHTML = '<span class="spin"></span>Setting up…';
       try { const u = getServer(); const j = await hhCall('/hh/new', {state:shareable(state), pro:getPro().token}, u); setHH({url:u, id:j.id, secret:j.secret}); hhLast = Date.now(); sheetSettings('hh'); toast('Shared kitchen started'); } catch(e){ hs.textContent = hhErrText(e.msg); } };
     const hJoin = el.querySelector('#hJoin'); if (hJoin) hJoin.onclick = async ()=>{ const inv = readInvite(el.querySelector('#hCode').value); if (!inv){ hs.textContent = 'That doesn’t look like an invite code.'; return; }
@@ -2257,6 +2275,80 @@ document.addEventListener('click', ev=>{
   else if (a==='done'){ const s = closeScan(); const rows = s.items.filter(r=>!r.loading).reverse().map(r=>({name:r.name || 'Item ' + r.code, qty:(r.count>1 ? r.count + ' x ' : '') + (r.qty||'')})); const keep = ui.trayKeep || []; ui.trayKeep = null; if (rows.length || keep.length) sheetAdd(keep.map(r=>({name:r.name, qty:r.qty, loc:r.loc, exp:r.exp})).concat(rows)); }
 });
 
+/* ---------- add to Home Screen guide ---------- */
+const INST_LS = 'larder-inst', UA = navigator.userAgent;
+const isStandalone = () => { try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch(e){ return false; } };
+const isIOS = /iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/i.test(UA);
+const inAppBrowser = /FBAN|FBAV|FB_IAB|Instagram|Snapchat|TikTok|musical_ly|LinkedInApp|Line\//i.test(UA);
+const iosOther = isIOS && /CriOS|FxiOS|EdgiOS/.test(UA);
+const canInstall = () => !isStandalone() && (isIOS || isAndroid);
+const wantInst = () => { if (!canInstall()) return false; try { return !localStorage.getItem(INST_LS); } catch(e){ return false; } };
+const IIC = {
+  dots:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  kebab:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
+  share:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M8 10H6a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-2"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></svg>',
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M12 15v-6M9.5 12.5 12 15l2.5-2.5"/></svg>'
+};
+let inst = null, instEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instEvt = e; if (inst) renderInst(); });
+window.addEventListener('appinstalled', () => { instEvt = null; try { localStorage.setItem(INST_LS, 'done'); } catch(e){} if (inst){ inst.step = 99; renderInst(); } });
+function openInst(then){ inst = {step:0, then}; $('#inst').hidden = false; document.body.style.overflow = 'hidden'; renderInst(); }
+function closeInst(mark){ try { if (mark) localStorage.setItem(INST_LS, mark); } catch(e){} const t = inst && inst.then; inst = null; $('#inst').hidden = true; $('#inst').innerHTML = ''; if (!onb) document.body.style.overflow = ''; afterOverlay(); if (t) t(); }
+function instSteps(){
+  const url = `<span class="iurl">${esc(location.host)}</span>`;
+  if (inAppBrowser) return [{t:'Open Larder in your browser first', d:`This app’s built-in browser can’t add Larder to your Home Screen. Tap the menu (usually ••• in a corner) and choose <b>Open in ${isIOS ? 'Safari' : 'Chrome'}</b>, or <b>Open in browser</b>.`,
+    a:`<div class="ibar"><span class="ik">${IIC.back}</span>${url}<span class="ik hi">${IIC.dots}</span></div><div class="menu"><div class="mi dim">Copy link</div><div class="mi hi">Open in ${isIOS ? 'Safari' : 'browser'}</div></div>`}];
+  if (isIOS) return [
+    iosOther
+      ? {t:'Tap Share', d:'In Chrome or Edge, the Share button is at the top right, next to the address bar. In Firefox, tap the menu first, then Share.', a:`<div class="ibar">${url}<span class="ik hi">${IIC.share}</span></div>`}
+      : {t:'Tap ••• then Share', d:'At the bottom of Safari, tap <b>•••</b>, then <b>Share</b>. On older iPhones, just tap the Share button at the bottom of the screen.', a:`<div class="ibar"><span class="ik">${IIC.back}</span>${url}<span class="ik hi">${IIC.dots}</span></div><div class="menu"><div class="mi hi">Share ${IIC.share}</div><div class="mi dim">Add Bookmark</div></div>`},
+    {t:'Tap Add to Home Screen', d:'Scroll down the list to find it. Not there? Tap <b>Edit Actions</b> at the very bottom and add it.', a:`<div class="menu"><div class="mi dim">Copy</div><div class="mi dim">Add to Reading List</div><div class="mi hi">Add to Home Screen ${IIC.plus}</div><div class="mi dim">Find on Page</div></div>`},
+    {t:'Tap Add', d:'Leave <b>Open as Web App</b> switched on, then tap <b>Add</b> in the top right corner.', a:`<div class="menu"><div class="mi"><span class="mut">Cancel</span><b>Add to Home Screen</b><span class="pillb">Add</span></div><div class="mi"><span>Open as Web App</span><span class="tg"></span></div></div>`}
+  ];
+  if (isAndroid) return [
+    {t:'Tap the menu', d:'In Chrome, tap <b>⋮</b> at the top right. In Samsung Internet, tap <b>☰</b> at the bottom right.', a:`<div class="ibar">${url}<span class="ik hi">${IIC.kebab}</span></div>`},
+    {t:'Tap Add to home screen', d:'It may say <b>Install app</b> instead. In Samsung Internet it’s <b>Add page to</b>, then <b>Home screen</b>.', a:`<div class="menu"><div class="mi dim">New tab</div><div class="mi dim">Bookmarks</div><div class="mi hi">Add to home screen ${IIC.phone}</div><div class="mi dim">Share</div></div>`},
+    {t:'Tap Install', d:'Then tap <b>Install</b> or <b>Add</b> on the box that pops up.', a:`<div class="menu"><div class="mi"><span style="display:flex;align-items:center;gap:10px"><img src="icons/icon-192.png" alt="" style="width:32px;height:32px;border-radius:8px">Larder</span><span class="pillb">Install</span></div></div>`}
+  ];
+  return [];
+}
+function renderInst(){
+  if (!inst) return;
+  const steps = instSteps(), n = steps.length, s = inst.step;
+  const icon = `<img class="appic" src="icons/icon-192.png" alt="">`;
+  let top = '', body = '', btns = '';
+  if (s === 0){
+    body = `<p class="big">Put Larder on your Home Screen</p><p class="meta" style="font-size:17px;margin-top:12px">It opens full screen like a normal app, works without signal, and can remind you before food goes off.${isIOS ? ' Do it before you add any food: the Home Screen app keeps its own copy of your kitchen.' : ''}</p><div class="ia">${icon}<span class="cap">Larder</span></div>`;
+    btns = isAndroid && instEvt && !inAppBrowser
+      ? `<div class="stack"><button class="btn pri" data-in="prompt">Add to Home Screen</button><button class="btn" data-in="skip">Not now</button></div>`
+      : `<div class="stack"><button class="btn pri" data-in="next">Show me how</button><button class="btn" data-in="skip">Not now</button></div>`;
+  } else if (s <= n){
+    const st = steps[s-1];
+    top = `${s} of ${n}`;
+    body = `<p class="big">${st.t}</p><p class="meta" style="font-size:17px;margin-top:12px">${st.d}</p><div class="ia">${st.a}</div>`;
+    btns = `<div class="btns"><button class="btn" data-in="back">Back</button><button class="btn pri" data-in="next">${s===n ? 'Done it' : 'Next'}</button></div>`;
+  } else {
+    const ok = s === 99;
+    body = `<p class="big">${ok ? 'Larder is on your Home Screen' : 'Now open Larder from your Home Screen'}</p><p class="meta" style="font-size:17px;margin-top:12px">Look for the green jar icon and open Larder from there from now on.${isIOS ? ' You can close this Safari tab.' : ''}</p><div class="ia">${icon}<span class="cap">Larder</span></div>`;
+    btns = `<div class="stack"><button class="btn pri" data-in="done">Got it</button>${ok ? '' : '<button class="btn" data-in="back">Show me again</button>'}</div>`;
+  }
+  $('#inst').innerHTML = `<div class="in"><div class="ovtop"><span class="t mut">${top}</span>${s>0 && s<=n ? '<button class="lnk" data-in="skip">Skip</button>' : ''}</div>
+    <div class="ovbody" style="display:flex;flex-direction:column;justify-content:center">${body}</div>${btns}</div>`;
+}
+document.addEventListener('click', async ev=>{
+  if (!inst) return; const b = ev.target.closest('[data-in]'); if (!b) return;
+  const a = b.dataset.in, n = instSteps().length;
+  if (a==='next'){ inst.step = inst.step >= n ? n + 1 : inst.step + 1; if (inst.step > n) inst.step = n + 1; }
+  else if (a==='back'){ inst.step = inst.step > n ? (n ? 1 : 0) : Math.max(0, inst.step - 1); }
+  else if (a==='skip'){ closeInst('skip'); return; }
+  else if (a==='done'){ closeInst('done'); return; }
+  else if (a==='prompt' && instEvt){ const e = instEvt; instEvt = null; try { await e.prompt(); const r = await e.userChoice; if (r && r.outcome === 'accepted'){ try { localStorage.setItem(INST_LS, 'done'); } catch(x){} inst.step = 99; } } catch(x){} }
+  renderInst();
+});
+
 /* ---------- first run ---------- */
 function openOnb(){ onb = {step:0}; $('#onb').hidden = false; document.body.style.overflow = 'hidden'; renderOnb(); }
 function renderOnb(){
@@ -2289,7 +2381,7 @@ document.addEventListener('click', ev=>{
 
 /* ---------- events ---------- */
 document.addEventListener('click', ev=>{
-  const b = ev.target.closest('[data-act]'); if (!b || onb || cook || scan || chk) return;
+  const b = ev.target.closest('[data-act]'); if (!b || onb || cook || scan || chk || inst) return;
   if (b.closest('.sw') && Date.now() - (+b.closest('.sw').dataset.swiped||0) < 400) return;
   const a = b.dataset.act;
   if (a==='tab'){ tab = b.dataset.tab; ui.q = ''; render(); window.scrollTo(0,0); return; }
@@ -2346,7 +2438,8 @@ sweep(); save(); render();
 initRemote(); initSample(); loadCfg(); loadPrices(); claimPro(); refreshPro();
 if ('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 mirrorNotify(); setTimeout(syncPush, 1500);
-if (!state.prefs.onboarded) openOnb();
+if (wantInst()) openInst(()=>{ if (!state.prefs.onboarded) openOnb(); });
+else if (!state.prefs.onboarded) openOnb();
 if (getHH()) setTimeout(hhSync, 800);
 setInterval(()=>{ if (!document.hidden && getHH()) hhSync(); }, 45000);
 document.addEventListener('visibilitychange', ()=>{ if (!document.hidden){ setBadge(); loadCfg(); loadPrices(); refreshPro(); if (getHH()) hhSync(); if (sweep()){ save(); render(); } } });
