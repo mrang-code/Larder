@@ -250,7 +250,8 @@ async function proFor(env, token, force) {
   token = cleanCode(token); if (!token) return {active: false};
   const rec = await env.DB.get('pro:' + token, 'json'); if (!rec) return {active: false, unknown: true};
   if (!rec.comp && rec.sub && env.STRIPE_KEY && (force || Date.now() - (rec.chk || 0) > 6 * 3600e3)) {
-    try { fromSub(rec, await stripe(env, 'GET', 'subscriptions/' + rec.sub)); await env.DB.put('pro:' + token, JSON.stringify(rec)); } catch (e) {}
+    try { fromSub(rec, await stripe(env, 'GET', 'subscriptions/' + rec.sub)); await env.DB.put('pro:' + token, JSON.stringify(rec)); }
+    catch (e) { if (/no such subscription/i.test(String(e && e.message || e))) { rec.status = 'ended'; rec.chk = Date.now(); await env.DB.put('pro:' + token, JSON.stringify(rec)); } }   // e.g. a test subscription after switching to the live key
   }
   return {active: isActive(rec), token, rec};
 }
