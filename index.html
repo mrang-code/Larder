@@ -532,9 +532,17 @@ function evalRecipe(r, ctx){
   return {r, rows, missing, short, urgent, sp, cov, have:have.length, req:req.length, score, scale};
 }
 function tagsOf(r){ const t=new Set(r.tags||[]); if (t.has('vegan')){ t.add('veg'); t.add('df'); } return t; }
+// Egg in any form (egg noodles, mayo, brioche…) for vegetarians who don't eat eggs, and beef for people who avoid it.
+const EGG_RE = /\b(eggs?|egg noodles?|mayo|mayonnaise|aioli|meringue|brioche|custard|hollandaise|carbonara|frittata|omelette|quiche|shakshuka)\b/i;
+const BEEF_RE = /\b(beef|steak|veal|brisket|oxtail|sirloin|ribeye|rib-eye|rump|bresaola|pastrami|corned)\b/i;
+const ingText = r => (r.n||'') + ' ' + (r.i||[]).map(x=>x[0] + ' ' + x[1]).join(' ');
+const hasEgg = r => EGG_RE.test(ingText(r).replace(/\beggplant\b|egg[- ]free/gi, ''));
+const hasBeef = r => BEEF_RE.test(ingText(r)) || (r.i||[]).some(x=>/\bmince\b/i.test(x[0] + ' ' + x[1]) && !/lamb|pork|turkey|chicken|quorn|veggie|vegetable|soya|plant/i.test(x[0] + ' ' + x[1]));
 function dietOk(r){
   const p=state.prefs, t=tagsOf(r);
-  if (p.diet==='vegetarian' && !t.has('veg')) return false;
+  if ((p.diet==='vegetarian' || p.diet==='noegg') && !t.has('veg')) return false;
+  if (p.diet==='noegg' && hasEgg(r)) return false;
+  if (p.nobeef && hasBeef(r)) return false;
   if (p.diet==='vegan' && !t.has('vegan')) return false;
   if (p.diet==='pescatarian' && !(t.has('veg')||t.has('pesc'))) return false;
   if (p.gf && !t.has('gf')) return false;
@@ -1703,7 +1711,8 @@ async function planDinners(n, msg){
   const empty = weekDays().filter(d=>!dinnerOf(d)).length;
   return {placed, added, gaps: placed < n ? Math.min(empty, n - placed) : 0};
 }
-function prefsLine(){ const p = state.prefs; return `DIET: ${p.diet}${p.halal?', halal (no pork or alcohol)':''}${p.gf?', gluten-free':''}${p.df?', dairy-free':''}${hpOn()?'. They like high-protein meals.':''}
+const DIET_TXT = {none:'anything', vegetarian:'vegetarian (no meat or fish; eggs and dairy are fine)', noegg:'vegetarian with NO eggs (no meat, fish or eggs, and nothing containing egg such as mayonnaise, egg noodles, brioche, meringue or fresh egg pasta; no gelatine; dairy like milk, paneer, yogurt and ghee is fine)', pescatarian:'pescatarian (fish but no meat)', vegan:'vegan'};
+function prefsLine(){ const p = state.prefs; return `DIET: ${DIET_TXT[p.diet]||p.diet}${p.nobeef?', no beef or veal (they do not eat beef)':''}${p.halal?', halal (no pork or alcohol)':''}${p.gf?', gluten-free':''}${p.df?', dairy-free':''}${hpOn()?'. They like high-protein meals.':''}
 AVOID: ${p.dislikes||'nothing'}
 APPLIANCES: ${applLine()}
 LOVES: ${allRecipes().filter(r=>isFav(r.id)).map(r=>r.n).slice(0,8).join('; ')||'not known yet'}
@@ -2029,11 +2038,11 @@ function vList(){
 /* ---------- settings ---------- */
 function sheetSettings(focus){
   const p = state.prefs, pu = getPush(), hh = getHH(), srv = getServer(), g = getGem();
-  const diets = [['none','No restrictions'],['vegetarian','Vegetarian'],['pescatarian','Pescatarian'],['vegan','Vegan']];
+  const diets = [['none','No restrictions'],['vegetarian','Vegetarian, eats eggs'],['noegg','Vegetarian, no eggs'],['pescatarian','Pescatarian'],['vegan','Vegan']];
   openSheet(`${head('Settings')}
     <details ${focus?'':'open'}><summary>Your cooking</summary><div>
       <label class="f">Diet</label><div class="pills">${diets.map(([k,l])=>`<button class="pill ${p.diet===k?'on':''}" data-diet="${k}">${l}</button>`).join('')}</div>
-      <div class="pills">${[['halal','Halal'],['gf','Gluten-free'],['df','Dairy-free']].map(([k,l])=>`<button class="pill ${p[k]?'on':''}" data-flag="${k}">${l}</button>`).join('')}</div>
+      <div class="pills">${[['halal','Halal'],['nobeef','No beef'],['gf','Gluten-free'],['df','Dairy-free']].map(([k,l])=>`<button class="pill ${p[k]?'on':''}" data-flag="${k}">${l}</button>`).join('')}</div>
       <button class="tog ${hpOn()?'on':''}" id="sHp"><span>High protein<small>Puts protein-rich recipes first</small></span><i></i></button>
       <label class="f">Usually cooking for</label><div class="seg">${[1,2,3,4,5,6].map(n=>`<button class="${planPeople()===n?'on':''}" data-pp="${n}">${n}</button>`).join('')}</div>
       <label class="f">Never suggest (comma separated)</label><input type="text" id="sDis" value="${esc(p.dislikes)}" placeholder="e.g. mushroom, prawn">
@@ -2173,10 +2182,10 @@ document.addEventListener('click', ev=>{
 function openOnb(){ onb = {step:0}; $('#onb').hidden = false; document.body.style.overflow = 'hidden'; renderOnb(); }
 function renderOnb(){
   const p = state.prefs, s = onb.step;
-  const diets = [['none','Anything'],['vegetarian','Vegetarian'],['pescatarian','Pescatarian'],['vegan','Vegan']];
+  const diets = [['none','Anything'],['vegetarian','Vegetarian, eats eggs'],['noegg','Vegetarian, no eggs'],['pescatarian','Pescatarian'],['vegan','Vegan']];
   const body = s===0 ? `<p class="big">Use what you’ve got.</p><p class="meta" style="font-size:17px;margin-top:12px">Larder keeps track of your food, tells you what to use first, and writes recipes from what’s in.</p>`
     : s===1 ? `<p class="big">How do you eat?</p><div class="pills" style="margin-top:18px">${diets.map(([k,l])=>`<button class="pill ${p.diet===k?'on':''}" data-od="${k}">${l}</button>`).join('')}</div>
-      <div class="pills">${[['halal','Halal'],['gf','Gluten-free'],['df','Dairy-free']].map(([k,l])=>`<button class="pill ${p[k]?'on':''}" data-of="${k}">${l}</button>`).join('')}</div>
+      <div class="pills">${[['halal','Halal'],['nobeef','No beef'],['gf','Gluten-free'],['df','Dairy-free']].map(([k,l])=>`<button class="pill ${p[k]?'on':''}" data-of="${k}">${l}</button>`).join('')}</div>
       <button class="tog ${hpOn()?'on':''}" data-ohp="1" style="margin-top:8px"><span>High protein<small>Protein-rich recipes first</small></span><i></i></button>
       <label class="f">Usually cooking for</label><div class="seg">${[1,2,3,4,5,6].map(n=>`<button class="${planPeople()===n?'on':''}" data-opp="${n}">${n}</button>`).join('')}</div>`
     : s===2 ? `<p class="big">What do you cook with?</p><div class="pills" style="margin-top:18px">${APPL.map(([k,l])=>`<button class="pill ${p.appliances.includes(k)?'on':''}" data-oa="${k}">${l}</button>`).join('')}</div>`
